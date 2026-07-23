@@ -1,0 +1,18 @@
+# Apple Silicon only (MLX). Python 3.11+ recommended.
+mlx>=0.21
+mlx-lm>=0.21
+mlx-whisper>=0.4
+mlx-audio>=0.1          # Kokoro TTS (MLX port)
+misaki[en]>=0.6         # Kokoro's English G2P — mlx-audio doesn't pull it in itself
+numpy
+sounddevice             # mic + speaker (PortAudio)
+soundfile               # wake-sound loading (assets/wake.wav)
+webrtcvad-wheels        # VAD; pure-C, tiny — no torch dependency on purpose
+requests
+beautifulsoup4          # DuckDuckGo HTML fallback parsing
+psutil                  # RAM-pressure check for coder swap policy
+huggingface_hub         # model prefetch script
+anthropic>=0.40         # cloud escalation for HARD queries (needs ANTHROPIC_API_KEY)
+fastapi>=0.110          # web dashboard (jarvis/server.py)
+uvicorn[standard]>=0.29 # dashboard server
+wsproto>=1.2            # forced WS backend — websockets-sansio 403s on macOS

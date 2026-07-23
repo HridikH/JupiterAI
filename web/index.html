@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jupiter.AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0604;
+    --panel: rgba(32, 20, 11, .62);
+    --edge: rgba(255, 171, 77, .15);
+    --edge-hi: rgba(255, 171, 77, .5);
+    --text: #f3e4cd;
+    --dim: #96805e;
+    --menu: #ffab4d; --listening: #5fe3a1; --thinking: #ffd166;
+    --speaking: #8fb2ff; --coding: #d18bff; --idle: #ffab4d; --error: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1400px 900px at 50% 25%, #1c110a 0%, var(--bg) 62%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.5 "SF Mono", ui-monospace, Menlo, monospace;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(rgba(255,171,77,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,171,77,.04) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(900px 600px at 50% 40%, #000 0%, transparent 75%);
+    animation: griddrift 24s linear infinite;
+  }
+  @keyframes griddrift { to { background-position: 44px 44px, 44px 44px; } }
+  #dust { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+  header {
+    position: relative; z-index: 6;
+    display: flex; align-items: center; gap: 14px; padding: 13px 22px;
+    border-bottom: 1px solid var(--edge);
+    background: linear-gradient(180deg, rgba(26,15,8,.75), rgba(26,15,8,.25));
+    backdrop-filter: blur(6px);
+  }
+  body.electron header { -webkit-app-region: drag; padding-left: 84px; }
+  body.electron header button { -webkit-app-region: no-drag; }
+  header h1 {
+    font-size: 14px; letter-spacing: .34em; font-weight: 600;
+    text-shadow: 0 0 16px rgba(255,171,77,.55);
+  }
+  header h1 .ai { color: var(--menu); }
+  #statusword { color: var(--dim); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; min-width: 110px; }
+  #chips { display: flex; gap: 8px; margin-left: auto; }
+  .chip {
+    font-size: 10px; letter-spacing: .12em; padding: 3px 9px; border-radius: 20px;
+    border: 1px solid var(--edge); color: var(--dim); transition: all .3s;
+  }
+  .chip.loading { color: var(--thinking); border-color: rgba(255,209,102,.5); animation: chippulse 1s ease-in-out infinite; }
+  .chip.ready { color: var(--listening); border-color: rgba(95,227,161,.45); text-shadow: 0 0 8px rgba(95,227,161,.5); }
+  @keyframes chippulse { 50% { opacity: .45; } }
+  #conn { font-size: 10px; color: var(--dim); letter-spacing: .1em; }
+  #conn.ok { color: var(--listening); }
+
+  main { position: relative; z-index: 1; flex: 1; display: flex; min-height: 0; }
+
+  /* ---- fullscreen 3D stage ---- */
+  #stage { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+  #stage canvas { position: absolute; inset: 0; }
+  #stage.flat::after { /* three.js failed (offline) — fallback disc */
+    content: ""; position: absolute; left: 50%; top: 50%; width: 280px; height: 280px;
+    transform: translate(-50%, -50%); border-radius: 50%;
+    background: radial-gradient(circle at 36% 34%, #f0dcb2 0%, #c98d5a 42%, #7d5236 78%, #1c110a 100%);
+    box-shadow: 0 0 80px rgba(255,171,77,.3);
+  }
+  #orbstate {
+    position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: .5em; text-transform: uppercase; color: var(--dim);
+    pointer-events: none; text-shadow: 0 0 10px rgba(255,171,77,.4); z-index: 3;
+  }
+  #voicehint {
+    position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+    font-size: 11px; color: var(--dim); letter-spacing: .05em; z-index: 3; white-space: nowrap;
+  }
+
+  /* ---- floating orbital cards ---- */
+  .cardpos { position: absolute; z-index: 4; transform: translate(-50%, -50%); }
+  .bob { animation: bob 5.5s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-9px); } }
+  .card {
+    position: relative; width: 122px;
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 13px;
+    padding: 15px 6px 12px; text-align: center; cursor: pointer; user-select: none;
+    transform-style: preserve-3d;
+    transition: transform .18s ease, border-color .18s, box-shadow .18s;
+    will-change: transform;
+    backdrop-filter: blur(6px);
+  }
+  .card.tilting { transition: transform .05s linear; }
+  .card::before {
+    content: ""; position: absolute; inset: 0; border-radius: 13px;
+    background: radial-gradient(140px 100px at var(--gx, 50%) var(--gy, 50%),
+                rgba(255,215,160,.16), transparent 70%);
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .card:hover::before { opacity: 1; }
+  .card:hover { border-color: var(--edge-hi); box-shadow: 0 18px 40px rgba(0,0,0,.6), 0 0 22px rgba(255,171,77,.14); }
+  .card.active { border-color: var(--listening); box-shadow: 0 0 22px rgba(95,227,161,.2); animation: cardglow 2.2s ease-in-out infinite; }
+  @keyframes cardglow { 50% { box-shadow: 0 0 10px rgba(95,227,161,.09); } }
+  .card .ico {
+    font-size: 24px; display: block; margin-bottom: 6px;
+    filter: drop-shadow(0 0 8px rgba(255,171,77,.5));
+    transform: translateZ(30px);
+  }
+  .card .name { font-size: 12px; letter-spacing: .1em; transform: translateZ(18px); display: block; }
+  .card .hint { font-size: 9.5px; color: var(--dim); display: block; margin-top: 3px; transform: translateZ(10px); }
+  .card .key { position: absolute; top: 5px; right: 8px; font-size: 9px; color: var(--dim); opacity: .7; }
+
+  /* ---- collapsible transcript panel ---- */
+  #right {
+    width: 420px; display: flex; flex-direction: column;
+    border-left: 1px solid var(--edge); background: rgba(20,12,7,.55);
+    transition: width .35s ease; overflow: hidden; backdrop-filter: blur(8px);
+  }
+  body.panelclosed #right { width: 0; border-left: none; }
+  #rightinner { width: 420px; height: 100%; display: flex; flex-direction: column; }
+  #logheader {
+    display: flex; align-items: center; gap: 10px; padding: 10px 18px 8px; font-size: 10px;
+    letter-spacing: .25em; color: var(--dim); text-transform: uppercase;
+    border-bottom: 1px solid var(--edge);
+  }
+  #logheader button { background: none; border: none; color: var(--dim); cursor: pointer; font: inherit; letter-spacing: .1em; padding: 2px 6px; }
+  #logheader button:hover { color: var(--text); }
+  #collapse { margin-left: auto; font-size: 13px; }
+  #openlog {
+    position: fixed; top: 64px; right: 14px; z-index: 7; display: none;
+    background: var(--panel); border: 1px solid var(--edge-hi); color: var(--text);
+    border-radius: 9px; padding: 7px 13px; font: inherit; font-size: 12px; cursor: pointer;
+    backdrop-filter: blur(8px); box-shadow: 0 6px 22px rgba(0,0,0,.5);
+  }
+  #openlog:hover { box-shadow: 0 0 14px rgba(255,171,77,.25); }
+  body.panelclosed #openlog { display: block; }
+  #log { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 9px; scrollbar-width: thin; scrollbar-color: rgba(255,171,77,.25) transparent; }
+  .msg {
+    max-width: 92%; padding: 9px 13px; border-radius: 11px; white-space: pre-wrap;
+    word-break: break-word; animation: msgin .22s ease both; position: relative;
+  }
+  @keyframes msgin { from { opacity: 0; transform: translateY(8px); } }
+  .you { align-self: flex-end; background: rgba(95,227,161,.07); border: 1px solid rgba(95,227,161,.26); border-bottom-right-radius: 3px; }
+  .jarvis { align-self: flex-start; background: rgba(255,171,77,.07); border: 1px solid rgba(255,171,77,.3); border-bottom-left-radius: 3px; }
+  .jarvis.streaming::after { content: "▊"; animation: caret .8s steps(1) infinite; color: var(--menu); }
+  @keyframes caret { 50% { opacity: 0; } }
+  .stamp { display: block; font-size: 8.5px; color: var(--dim); margin-top: 4px; letter-spacing: .08em; }
+  .sys { align-self: center; color: var(--dim); font-size: 10.5px; padding: 1px; animation: msgin .22s ease both; }
+  .err { align-self: center; color: var(--error); font-size: 11.5px; animation: msgin .22s ease both, shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  .routechip {
+    align-self: flex-start; font-size: 9px; letter-spacing: .1em; color: var(--thinking);
+    border: 1px solid rgba(255,209,102,.35); padding: 2px 8px; border-radius: 12px;
+    animation: msgin .2s ease both;
+  }
+  .partial { opacity: .5; font-style: italic; }
+  .toolcard {
+    align-self: flex-start; max-width: 94%; border: 1px solid var(--edge); background: var(--panel);
+    border-radius: 11px; padding: 10px 13px; font-size: 12px; animation: msgin .25s ease both;
+  }
+  .toolcard b { color: var(--menu); }
+  .toolcard i { color: var(--dim); }
+
+  #bar { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--edge); }
+  #toolpick { display: none; background: var(--panel); color: var(--text); border: 1px solid var(--edge); border-radius: 9px; padding: 0 8px; font: inherit; outline: none; }
+  body[data-mode="tools"] #toolpick { display: block; }
+  #inp {
+    flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--edge); border-radius: 9px;
+    color: var(--text); padding: 10px 14px; font: inherit; outline: none; transition: border-color .2s, box-shadow .2s;
+  }
+  #inp:focus { border-color: var(--edge-hi); box-shadow: 0 0 14px rgba(255,171,77,.14); }
+  button {
+    background: rgba(255,171,77,.1); color: var(--text); border: 1px solid var(--edge);
+    border-radius: 9px; padding: 0 17px; font: inherit; cursor: pointer; transition: all .15s;
+  }
+  button:hover { background: rgba(255,171,77,.24); }
+  #hush { border-color: rgba(255,107,107,.4); }
+  #hush:hover { background: rgba(255,107,107,.15); }
+
+  #toasts { position: fixed; bottom: 18px; left: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 8; }
+  .toast {
+    background: var(--panel); border: 1px solid var(--edge-hi); border-radius: 9px;
+    padding: 8px 14px; font-size: 11.5px; backdrop-filter: blur(8px);
+    animation: toastin .25s ease both; box-shadow: 0 6px 22px rgba(0,0,0,.5);
+  }
+  .toast.bye { animation: toastout .4s ease both; }
+  @keyframes toastin { from { opacity: 0; transform: translateX(-14px); } }
+  @keyframes toastout { to { opacity: 0; transform: translateX(-14px); } }
+</style>
+</head>
+<body data-mode="menu">
+<canvas id="dust"></canvas>
+<header>
+  <h1>J U P I T E R<span class="ai"> . A I</span></h1>
+  <span id="statusword">menu</span>
+  <div id="chips">
+    <span class="chip" id="chip-stt">STT</span>
+    <span class="chip" id="chip-tts">TTS</span>
+    <span class="chip" id="chip-llm">LLM</span>
+    <span id="conn" class="chip">LINK…</span>
+  </div>
+</header>
+<main>
+  <section id="stage" title="click empty space: stop speaking / back to menu">
+    <div id="orbstate">MENU</div>
+    <div id="voicehint"></div>
+    <div class="cardpos"><div class="bob"><div class="card" data-mode="chat"><span class="key">⌘1</span><span class="ico">🗣</span><span class="name">Chat</span><span class="hint">full voice loop</span></div></div></div>
+    <div class="cardpos"><div class="bob"><div class="card" data-mode="transcribe"><span class="key">⌘2</span><span class="ico">📝</span><span class="name">Transcribe</span><span class="hint">live dictation</span></div></div></div>
+    <div class="cardpos"><div class="bob"><div class="card" data-mode="speak"><span class="key">⌘3</span><span class="ico">🔊</span><span class="name">Speak</span><span class="hint">type, it talks</span></div></div></div>
+    <div class="cardpos"><div class="bob"><div class="card" data-mode="tools"><span class="key">⌘4</span><span class="ico">🌦</span><span class="name">Tools</span><span class="hint">weather · stocks · search</span></div></div></div>
+    <div class="cardpos"><div class="bob"><div class="card" data-mode="coder"><span class="key">⌘5</span><span class="ico">⌨️</span><span class="name">Coder</span><span class="hint">builds &amp; runs code</span></div></div></div>
+  </section>
+  <section id="right">
+    <div id="rightinner">
+      <div id="logheader">Transcript
+        <button id="clearlog">clear</button>
+        <button id="collapse" title="minimize transcript">⟫</button>
+      </div>
+      <div id="log"></div>
+      <div id="bar">
+        <select id="toolpick">
+          <option value="get_weather">weather</option>
+          <option value="get_stock">stock</option>
+          <option value="web_search">search</option>
+        </select>
+        <input id="inp" placeholder="type here — or just speak" autocomplete="off">
+        <button id="send">Send</button>
+        <button id="hush" title="stop speaking (also: click empty space)">■</button>
+      </div>
+    </div>
+  </section>
+</main>
+<button id="openlog">💬 transcript</button>
+<div id="toasts"></div>
+<script>
+"use strict";
+/* ================= state ================= */
+const COLORS = {
+  menu: "#ffab4d", idle: "#ffab4d", listening: "#5fe3a1", thinking: "#ffd166",
+  speaking: "#8fb2ff", coding: "#d18bff", loading: "#ffd166", error: "#ff6b6b",
+  standby: "#8a5c2e",
+};
+let state = "menu", mode = "menu";
+let jbubble = null, pbubble = null;
+let audioTarget = 0, audioAt = 0;
+let tokenPulse = 0, rippleT = 0;
+if (navigator.userAgent.includes("Electron")) document.body.classList.add("electron");
+
+const $ = (id) => document.getElementById(id);
+const log = $("log");
+const stage = $("stage");
+
+/* ================= websocket ================= */
+let ws, retry = 500;
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { $("conn").textContent = "LINK ●"; $("conn").className = "chip ready"; retry = 500; toast("link established"); };
+  ws.onclose = () => { $("conn").textContent = "LINK ○"; $("conn").className = "chip loading";
+                       setTimeout(connect, retry = Math.min(retry * 2, 8000)); };
+  ws.onmessage = (e) => handle(JSON.parse(e.data));
+}
+connect();
+const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+/* ================= events ================= */
+const PLACEHOLDER = {
+  chat: "type or speak to Jupiter", transcribe: "…listening (mic only)",
+  speak: "type text to be spoken aloud", tools: "speak or type — “weather in Tokyo” · AAPL · news",
+  coder: "speak or type what to build", menu: "pick a task above",
+};
+function chipFor(what) {
+  if (what.startsWith("whisper")) return $("chip-stt");
+  if (what.startsWith("kokoro")) return $("chip-tts");
+  return $("chip-llm");
+}
+function handle(ev) {
+  switch (ev.type) {
+    case "mode":
+      mode = ev.value;
+      document.body.dataset.mode = mode;
+      document.querySelectorAll(".card").forEach(c =>
+        c.classList.toggle("active", c.dataset.mode === mode));
+      setState(mode === "menu" ? "menu" : "idle");
+      if (mode !== "menu") sys(`— ${mode} mode —`);
+      $("inp").placeholder = PLACEHOLDER[mode] || "";
+      break;
+    case "state": setState(ev.value); break;
+    case "level": audioTarget = ev.value; audioAt = performance.now(); break;
+    case "loading": setState("loading"); chipFor(ev.what).className = "chip loading"; toast(`loading ${ev.what}…`); break;
+    case "loaded": chipFor(ev.what).className = "chip ready"; toast(`${ev.what} ready`); break;
+    case "menu_hint": $("voicehint").textContent = "🎤 " + ev.text; break;
+    case "partial":
+      if (!pbubble) pbubble = bubble("you partial");
+      pbubble.textContent = ev.text; scroll_();
+      break;
+    case "heard":
+      if (pbubble) { pbubble.remove(); pbubble = null; }
+      endStream();
+      stamped(bubble("you"), ev.text); scroll_();
+      break;
+    case "delta":
+      if (!jbubble) { jbubble = bubble("jarvis streaming"); jbubble._text = ""; }
+      jbubble._text += ev.text;
+      jbubble.textContent = jbubble._text;
+      tokenPulse = 1;
+      scroll_();
+      break;
+    case "done": endStream(ev.secs); break;
+    case "route": {
+      const d = document.createElement("div");
+      d.className = "routechip";
+      d.textContent = `◈ ${ev.label} · ${ev.kind} · ${ev.ms}ms`;
+      log.appendChild(d); scroll_(); break;
+    }
+    case "tool_result": toolCard(ev); break;
+    case "log": sys(ev.text); break;
+    case "error": { const d = bubble("err"); d.textContent = "⚠ " + ev.text; scroll_(); break; }
+  }
+}
+function endStream(secs) {
+  if (jbubble) {
+    jbubble.classList.remove("streaming");
+    stamped(jbubble, null, secs);
+    jbubble = null;
+  }
+}
+function setState(s) {
+  state = s;
+  $("statusword").textContent = s;
+  typewrite($("orbstate"), s.toUpperCase());
+}
+let twTimer = null;
+function typewrite(el, text) {
+  clearInterval(twTimer);
+  let i = 0;
+  el.textContent = "";
+  twTimer = setInterval(() => {
+    el.textContent = text.slice(0, ++i);
+    if (i >= text.length) clearInterval(twTimer);
+  }, 34);
+}
+
+/* ================= log helpers ================= */
+function bubble(cls) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  log.appendChild(d);
+  return d;
+}
+function stamped(el, text, secs) {
+  if (text !== null && text !== undefined) el.textContent = text;
+  const s = document.createElement("span");
+  s.className = "stamp";
+  const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  s.textContent = secs ? `${t} · ${secs}s` : t;
+  el.appendChild(s);
+}
+function sys(t) { const d = document.createElement("div"); d.className = "sys"; d.textContent = t; log.appendChild(d); scroll_(); }
+function toolCard(ev) {
+  const d = document.createElement("div");
+  d.className = "toolcard";
+  let body = "";
+  if (ev.tool === "web_search" && Array.isArray(ev.data)) {
+    body = ev.data.map(r => `<div>• <b>${esc(r.title)}</b><br>&nbsp;&nbsp;${esc(r.snippet || "")}</div>`).join("");
+  } else {
+    body = `<pre style="margin:4px 0 0">${esc(JSON.stringify(ev.data, null, 1))}</pre>`;
+  }
+  d.innerHTML = `<b>${esc(ev.tool)}</b>(${esc(ev.arg || "")})<br>${body}<br><i>${esc(ev.spoken || "")}</i>`;
+  log.appendChild(d); scroll_();
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function scroll_() { log.scrollTop = log.scrollHeight; }
+function toast(text) {
+  const d = document.createElement("div");
+  d.className = "toast"; d.textContent = text;
+  $("toasts").appendChild(d);
+  setTimeout(() => { d.classList.add("bye"); setTimeout(() => d.remove(), 450); }, 2600);
+}
+
+/* ================= input ================= */
+function selectMode(m) {
+  if (!ws || ws.readyState !== 1) { sys("⚠ not connected to the server yet"); return; }
+  const c = document.querySelector(`.card[data-mode="${m}"]`);
+  if (c) c.classList.add("active");
+  sys(`switching to ${m}…`);
+  send({ type: "select_mode", mode: m });
+}
+function submit() {
+  const text = $("inp").value.trim();
+  if (!text) return;
+  $("inp").value = "";
+  if (mode === "tools") {
+    send({ type: "tool", tool: $("toolpick").value, arg: text });
+    stamped(bubble("you"), `${$("toolpick").value}: ${text}`); scroll_();
+  } else if (mode === "menu") {
+    sys("pick a task first");
+  } else {
+    send({ type: "text", text });
+    if (mode !== "speak") { endStream(); stamped(bubble("you"), text); scroll_(); }
+  }
+}
+$("send").addEventListener("click", submit);
+$("inp").addEventListener("keydown", (e) => e.key === "Enter" && submit());
+$("hush").addEventListener("click", () => send({ type: "stop_speaking" }));
+$("clearlog").addEventListener("click", () => { log.innerHTML = ""; jbubble = pbubble = null; });
+$("collapse").addEventListener("click", () => document.body.classList.add("panelclosed"));
+$("openlog").addEventListener("click", () => document.body.classList.remove("panelclosed"));
+stage.addEventListener("click", (e) => {
+  if (e.target.closest(".card")) return;
+  if (state === "speaking") { send({ type: "stop_speaking" }); rippleT = 1; }
+  else if (mode !== "menu") selectMode("menu");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") selectMode("menu");
+  if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "5") {
+    e.preventDefault();
+    selectMode(["chat", "transcribe", "speak", "tools", "coder"][+e.key - 1]);
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === "t") {
+    e.preventDefault();
+    document.body.classList.toggle("panelclosed");
+  }
+});
+
+/* ================= 3D tilt on cards + orbital layout ================= */
+document.querySelectorAll(".card").forEach(card => {
+  card.addEventListener("click", () => selectMode(card.dataset.mode));
+  card.addEventListener("mousemove", (e) => {
+    const r = card.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - .5;
+    const py = (e.clientY - r.top) / r.height - .5;
+    card.classList.add("tilting");
+    card.style.transform =
+      `translateZ(8px) rotateX(${(-py * 16).toFixed(2)}deg) rotateY(${(px * 16).toFixed(2)}deg)`;
+    card.style.setProperty("--gx", `${((px + .5) * 100).toFixed(1)}%`);
+    card.style.setProperty("--gy", `${((py + .5) * 100).toFixed(1)}%`);
+  });
+  card.addEventListener("mouseleave", () => {
+    card.classList.remove("tilting");
+    card.style.transform = "";
+  });
+});
+
+const cardpos = [...document.querySelectorAll(".cardpos")];
+cardpos.forEach((p, i) => p.querySelector(".bob").style.animationDelay = `${i * .7}s`);
+function layoutCards() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const cx = w / 2, cy = h / 2;
+  const rad = Math.max(190, Math.min(w, h) * .38);
+  cardpos.forEach((p, i) => {
+    const a = -Math.PI / 2 + i * (Math.PI * 2 / cardpos.length);
+    p.style.left = `${cx + Math.cos(a) * rad * 1.12}px`;
+    p.style.top = `${cy + Math.sin(a) * rad * .92}px`;
+  });
+}
+
+/* ================= mouse parallax ================= */
+let mx = .5, my = .5;
+document.addEventListener("mousemove", (e) => {
+  mx = e.clientX / innerWidth; my = e.clientY / innerHeight;
+});
+
+/* ================= jupiter texture ================= */
+const TW = 1024, TH = 512;
+function makeJupiterTexture() {
+  const c = document.createElement("canvas");
+  c.width = TW; c.height = TH;
+  const s = c.getContext("2d");
+  const stops = [
+    [0.00, "#7d5236"], [0.06, "#a8764f"], [0.13, "#e2c49a"], [0.20, "#b06a3c"],
+    [0.27, "#ecd9b4"], [0.34, "#c07848"], [0.41, "#f2e3c0"], [0.48, "#a85c34"],
+    [0.55, "#e6c697"], [0.62, "#c98d5a"], [0.70, "#f0dcb2"], [0.78, "#b5754a"],
+    [0.86, "#96613f"], [0.93, "#84543a"], [1.00, "#6d4630"],
+  ];
+  const lg = s.createLinearGradient(0, 0, 0, TH);
+  stops.forEach(([p, col]) => lg.addColorStop(p, col));
+  s.fillStyle = lg; s.fillRect(0, 0, TW, TH);
+  for (let i = 0; i < 1100; i++) {
+    const y = Math.random() * TH, x = Math.random() * TW;
+    const w = 30 + Math.random() * 220, h = 1.5 + Math.random() * 6;
+    s.fillStyle = Math.random() > .5
+      ? `rgba(255,242,218,${.03 + Math.random() * .09})`
+      : `rgba(110,55,22,${.03 + Math.random() * .09})`;
+    for (const xx of [x, x - TW, x + TW]) {
+      s.beginPath(); s.ellipse(xx, y, w, h, 0, 0, 7); s.fill();
+    }
+  }
+  for (let i = 0; i < 90; i++) {
+    const y = Math.random() * TH, x = Math.random() * TW;
+    const r = 6 + Math.random() * 22;
+    s.strokeStyle = `rgba(${Math.random() > .5 ? "245,225,195" : "120,60,25"},${.06 + Math.random() * .1})`;
+    s.lineWidth = 1 + Math.random() * 2;
+    for (const xx of [x, x - TW, x + TW]) {
+      s.beginPath(); s.arc(xx, y, r, Math.random() * 3, Math.random() * 3 + 2.5); s.stroke();
+    }
+  }
+  const gx = TW * .32, gy = TH * .63;
+  for (let r = 6; r > 0; r--) {
+    s.fillStyle = `rgba(${168 - r * 8},${64 - r * 5},${30 - r * 2},.16)`;
+    for (const xx of [gx, gx - TW, gx + TW]) {
+      s.beginPath(); s.ellipse(xx, gy, 16 + r * 13, 7 + r * 5.2, -0.12, 0, 7); s.fill();
+    }
+  }
+  s.fillStyle = "rgba(240,200,160,.18)";
+  s.beginPath(); s.ellipse(gx, gy, 20, 8, -0.12, 0, 7); s.fill();
+  return c;
+}
+
+/* ================= real 3D scene ================= */
+let three = null;
+const FIT_RADIUS = 2.15;  // world radius that must stay visible (outer ring + margin)
+function initThree() {
+  if (!window.THREE) { stage.classList.add("flat"); layoutCards(); return; }
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  stage.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
+
+  const group = new THREE.Group();
+  group.rotation.z = -0.09;
+  scene.add(group);
+
+  const tex = new THREE.CanvasTexture(makeJupiterTexture());
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 64, 48),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: .92, metalness: 0 })
+  );
+  group.add(sphere);
+
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xffab4d, transparent: true, opacity: .14,
+    side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), glowMat);
+  glow.scale.setScalar(1.18);
+  group.add(glow);
+
+  const rings = [];
+  [[1.45, .12, .0011], [1.65, .06, -.0018], [1.85, .1, .0007]].forEach(([rad, dash, v], i) => {
+    const pts = [];
+    for (let a = 0; a <= 128; a++) {
+      const th = a / 128 * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(th) * rad, Math.sin(th) * rad, 0));
+    }
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineDashedMaterial({ color: 0xffab4d, transparent: true, opacity: .32,
+                                     dashSize: .12 + dash, gapSize: .08 + dash * .6 })
+    );
+    line.computeLineDistances();
+    line.rotation.x = 1.25 + i * .1;
+    line.userData.v = v;
+    rings.push(line);
+    scene.add(line);
+  });
+
+  const N = 300;
+  const pos = new Float32Array(N * 3);
+  const shell = [];
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 1.35 + Math.random() * .9;
+    const y = (Math.random() - .5) * .9;
+    shell.push({ a, r, y, w: .0015 + Math.random() * .004 });
+    pos.set([Math.cos(a) * r, y, Math.sin(a) * r], i * 3);
+  }
+  const pgeo = new THREE.BufferGeometry();
+  pgeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const pMat = new THREE.PointsMaterial({ color: 0xffab4d, size: .02, transparent: true, opacity: .65 });
+  scene.add(new THREE.Points(pgeo, pMat));
+
+  const key = new THREE.DirectionalLight(0xfff1da, 1.35);
+  key.position.set(-2.4, 1.7, 2.6);
+  scene.add(key);
+  scene.add(new THREE.AmbientLight(0xffd9aa, .30));
+
+  three = { renderer, scene, camera, group, sphere, glow, glowMat, rings, pMat, shell, pgeo };
+  resize3d();
+}
+function resize3d() {
+  layoutCards();
+  if (!three) return;
+  const w = Math.max(stage.clientWidth, 1), h = Math.max(stage.clientHeight, 1);
+  three.renderer.setSize(w, h);
+  three.camera.aspect = w / h;
+  // pull the camera back exactly far enough that FIT_RADIUS is never clipped
+  // on the tighter axis — nothing gets cut off at any window/panel size.
+  const halfFov = three.camera.fov * Math.PI / 360;
+  const fitV = FIT_RADIUS / Math.tan(halfFov);
+  const fitH = FIT_RADIUS / (Math.tan(halfFov) * three.camera.aspect);
+  three.camera.position.z = Math.max(fitV, fitH) * 1.06;
+  three.camera.updateProjectionMatrix();
+}
+initThree();
+new ResizeObserver(resize3d).observe(stage);
+
+/* ================= render loop ================= */
+let cur = { r: 255, g: 171, b: 77 }, audio = 0, lastT = 0;
+function hex2rgb(h) {
+  return { r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) };
+}
+const dcv = $("dust"), dctx = dcv.getContext("2d");
+function sizeDust() { dcv.width = innerWidth; dcv.height = innerHeight; }
+sizeDust(); addEventListener("resize", sizeDust);
+const dust = Array.from({ length: 70 }, () => ({
+  x: Math.random(), y: Math.random(),
+  v: .00016 + Math.random() * .0005, s: .6 + Math.random() * 1.7, o: .04 + Math.random() * .12,
+}));
+
+function draw(t) {
+  requestAnimationFrame(draw);
+  const dt = lastT ? Math.min(t - lastT, 50) : 16;
+  lastT = t;
+  const target = hex2rgb(COLORS[state] || COLORS.idle);
+  cur.r += (target.r - cur.r) * .05; cur.g += (target.g - cur.g) * .05; cur.b += (target.b - cur.b) * .05;
+  const col = (a) => `rgba(${cur.r | 0},${cur.g | 0},${cur.b | 0},${a})`;
+
+  dctx.clearRect(0, 0, dcv.width, dcv.height);
+  for (const p of dust) {
+    p.y -= p.v; if (p.y < -0.02) { p.y = 1.02; p.x = Math.random(); }
+    dctx.fillStyle = col(p.o);
+    dctx.fillRect(p.x * dcv.width, p.y * dcv.height, p.s, p.s);
+  }
+
+  const stale = performance.now() - audioAt > 350;
+  audio += ((stale ? 0 : audioTarget) - audio) * .18;
+  tokenPulse *= .90;
+  if (rippleT > 0) rippleT -= .03;
+
+  if (!three) return;
+  const speed = { standby: .35, menu: .8, idle: .8, listening: 1.8, thinking: 3.2, speaking: 2.4, coding: 4, loading: 1.5 }[state] || 1;
+  const { group, sphere, glow, glowMat, rings, pMat, shell, pgeo, camera, renderer, scene } = three;
+
+  sphere.rotation.y += dt * .00016 * (.6 + speed * .6);
+
+  const breath = 1 + Math.sin(t * .0016 * speed) * .015;
+  group.scale.setScalar(breath + audio * .30 + tokenPulse * .05);
+
+  const c3 = (cur.r << 16) | (cur.g << 8) | (cur.b | 0);
+  glowMat.color.setHex(c3);
+  glowMat.opacity = .12 + tokenPulse * .22 + audio * .28 + rippleT * .3;
+  glow.scale.setScalar(1.18 + rippleT * .5);
+  pMat.color.setHex(c3);
+  for (const ring of rings) {
+    ring.material.color.setHex(c3);
+    ring.rotation.z += ring.userData.v * dt * speed;
+  }
+
+  const pos = pgeo.attributes.position.array;
+  for (let i = 0; i < shell.length; i++) {
+    const p = shell[i];
+    p.a += p.w * speed * dt * .06;
+    pos[i * 3] = Math.cos(p.a) * (p.r + audio * .25);
+    pos[i * 3 + 2] = Math.sin(p.a) * (p.r + audio * .25);
+  }
+  pgeo.attributes.position.needsUpdate = true;
+
+  camera.position.x += ((mx - .5) * .5 - camera.position.x) * .06;
+  camera.position.y += (-(my - .5) * .4 - camera.position.y) * .06;
+  camera.lookAt(0, 0, 0);
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "jarvis-dashboard",
+  "version": "1.0.0",
+  "description": "Native shell for the JARVIS voice assistant dashboard",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
