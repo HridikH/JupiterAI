@@ -59,6 +59,7 @@ class Pipeline:
         th = self.thresholds()
         try:
             crop, variants, quality = preprocess.preprocess(image_bytes)
+            self._maybe_store_crop(rid, crop)
             engine = self.engine()
             ocr_results = [engine.recognize(arr, variant=name) for name, arr in variants]
             decision = resolver.resolve(self.catalog(), ocr_results, th, quality,
@@ -79,6 +80,15 @@ class Pipeline:
                                                    "error": protocol.E_INTERNAL})
             self.hub.emit("result", request_id=rid, status="error",
                           result={"code": protocol.E_INTERNAL, "message": str(e)})
+
+    def _maybe_store_crop(self, rid: str, crop) -> None:
+        if not config.STORE_IMAGES:
+            return
+        try:
+            config.ensure_dirs()
+            crop.save(config.CAPTURES_DIR / f"{rid}.crop.jpg", format="JPEG", quality=85)
+        except Exception as e:  # never break identification on a storage error
+            log.warning(f"failed to store crop: {e}", extra={"request_id": rid})
 
     def as_fn(self, threaded: bool = True) -> Callable[[RequestRecord, bytes], None]:
         def _fn(rec: RequestRecord, image_bytes: bytes) -> None:

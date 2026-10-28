@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from typing import Callable, Optional
 
 from fastapi import FastAPI, Form, Header, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import config, protocol, receiver
 from .logging_setup import get
@@ -133,6 +133,46 @@ def create_app(store: Optional[StateStore] = None,
                                 content={"ok": False, "request_id": request_id,
                                          "error": "not_found"})
         return rec.to_public()
+
+    @app.get("/media/{request_id}")
+    async def media(request_id: str):
+        if not protocol.REQUEST_ID_RE.match(request_id):
+            return JSONResponse(status_code=400, content={"error": "bad id"})
+        p = config.CAPTURES_DIR / f"{request_id}.jpg"
+        if not p.exists():
+            return JSONResponse(status_code=404, content={"error": "no image"})
+        return FileResponse(p, media_type="image/jpeg")
+
+    @app.get("/media/{request_id}/crop")
+    async def media_crop(request_id: str):
+        if not protocol.REQUEST_ID_RE.match(request_id):
+            return JSONResponse(status_code=400, content={"error": "bad id"})
+        p = config.CAPTURES_DIR / f"{request_id}.crop.jpg"
+        if not p.exists():
+            return JSONResponse(status_code=404, content={"error": "no crop"})
+        return FileResponse(p, media_type="image/jpeg")
+
+    @app.get("/pdf")
+    async def pdf(path: str):
+        # Serve ONLY cached datasheet PDFs; block path traversal (offline, local).
+        cache_root = (config.CATALOG_DIR / "cache").resolve()
+        target = (config.ROOT / path).resolve()
+        try:
+            target.relative_to(cache_root)
+        except ValueError:
+            return JSONResponse(status_code=403, content={"error": "path not allowed"})
+        if not target.exists():
+            return JSONResponse(status_code=404, content={"error": "pdf not cached"})
+        return FileResponse(target, media_type="application/pdf")
+
+    @app.post("/speak")
+    async def speak(request: Request):
+        if not config.TTS_READOUT_ENABLED:
+            return {"ok": False, "reason": "disabled"}
+        from . import readout
+        body = await request.json()
+        ok = readout.speak(body.get("text", ""))
+        return {"ok": ok}
 
     @app.get("/")
     async def index():
