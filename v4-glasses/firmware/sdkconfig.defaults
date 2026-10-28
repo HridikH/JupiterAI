@@ -1,0 +1,29 @@
+# Defaults for ESP32-S3-WROOM-1-N8R8 (8MB flash, 8MB octal PSRAM).
+# `idf.py set-target esp32s3` then build picks these up.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- Octal PSRAM (required for full-res JPEG frame buffers) ---
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# --- CPU / flash ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+
+# --- Custom partition table (larger app for camera + TLS stack headroom) ---
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- HTTP client ---
+CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS=n
+
+# --- Camera: JPEG + PSRAM frame buffer ---
+CONFIG_OV5640_SUPPORT=y
+
+# --- Main task stack (upload builds a few local buffers) ---
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

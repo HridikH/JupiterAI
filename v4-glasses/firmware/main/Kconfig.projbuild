@@ -1,0 +1,32 @@
+menu "Glasses configuration"
+
+config GLASSES_WIFI_SSID
+    string "WiFi SSID"
+    default "CHANGE_ME_SSID"
+    help
+        2.4 GHz WiFi SSID the glasses connect to. Set via menuconfig; never hardcode.
+
+config GLASSES_WIFI_PASSWORD
+    string "WiFi password"
+    default "CHANGE_ME_PASSWORD"
+    help
+        WiFi password. Set via menuconfig; never commit real credentials.
+
+config GLASSES_WIFI_MAX_RETRY
+    int "WiFi connect max retries"
+    default 10
+
+config GLASSES_SERVER_URL
+    string "Laptop server base URL"
+    default "http://192.168.1.50:8777"
+    help
+        Base URL of the laptop FastAPI server on the LAN (no trailing slash).
+
+config GLASSES_SHARED_TOKEN
+    string "Shared auth token"
+    default "CHANGE_ME_dev_token"
+    help
+        Must match GLASSES_TOKEN on the server (X-Glasses-Token header). Set via
+        menuconfig; never commit the real token.
+
+endmenu

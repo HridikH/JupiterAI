@@ -1,0 +1,4 @@
+## Managed components (IDF Component Manager). `idf.py reconfigure` fetches these.
+dependencies:
+  espressif/esp32-camera: "^2.0.0"
+  idf: ">=5.1"

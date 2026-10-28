@@ -1,0 +1,22 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "camera.c"
+        "autofocus.c"
+        "worklights.c"
+        "button.c"
+        "status_led.c"
+        "battery.c"
+        "net.c"
+        "uploader.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        esp32-camera
+        esp_http_client
+        esp_wifi
+        esp_adc
+        nvs_flash
+        mbedtls
+        esp_timer
+        driver
+)
