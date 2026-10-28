@@ -3,74 +3,104 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Datasheet Glasses — Console</title>
+<title>Jupiter · Datasheet Glasses</title>
+<script src="/assets/three.min.js"></script>
 <style>
   :root{
-    --bg:#0d1117; --panel:#161b22; --panel2:#1c232c; --line:#2a3340;
-    --fg:#e6edf3; --dim:#8b96a5; --accent:#4493f8;
-    --ok:#2ea043; --okbg:#0f2417; --warn:#d29922; --warnbg:#2a230c;
-    --err:#f85149; --errbg:#2a1113; --cand:#a371f7; --candbg:#1e1630;
+    --bg:#0b0d12; --panel:rgba(22,27,34,.72); --line:#2a3340; --fg:#e6edf3;
+    --dim:#90a0b4; --accent:#4493f8;
+    --ok:#2ea043; --warn:#d29922; --err:#f85149; --cand:#a371f7;
   }
   *{box-sizing:border-box}
-  body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-       background:var(--bg);color:var(--fg)}
-  header{display:flex;align-items:center;gap:14px;padding:12px 18px;
-         border-bottom:1px solid var(--line);background:var(--panel)}
-  header h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
-  header .sub{color:var(--dim);font-size:12px}
+  html,body{height:100%}
+  body{margin:0;overflow:hidden;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+       background:radial-gradient(1200px 800px at 50% 40%, #11151d 0%, #0b0d12 70%);color:var(--fg)}
+  #dust{position:fixed;inset:0;z-index:0;pointer-events:none}
+  #stage{position:fixed;inset:0;z-index:1}
+  #stage canvas{display:block}
+
+  header{position:fixed;z-index:5;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;
+         padding:12px 18px}
+  header h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.4px}
+  header h1 b{color:#ffab4d} header .sub{color:var(--dim);font-size:12px}
   .spacer{flex:1}
   .chip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);
-        color:var(--dim);display:inline-flex;align-items:center;gap:6px}
+        color:var(--dim);display:inline-flex;align-items:center;gap:6px;background:rgba(13,17,23,.5)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
-  .chip.live .dot{background:var(--ok)} .chip.live{color:var(--ok);border-color:#1f3b27}
-  .chip.off .dot{background:var(--err)} .chip.off{color:var(--err);border-color:#3b1f22}
+  .chip.live .dot{background:var(--ok)} .chip.live{color:var(--ok)}
+  .chip.off .dot{background:var(--err)} .chip.off{color:var(--err)}
   .batt .bar{width:46px;height:8px;border:1px solid var(--line);border-radius:3px;overflow:hidden}
   .batt .fill{height:100%;background:var(--ok)}
-  main{max-width:1000px;margin:0 auto;padding:22px 18px 80px}
-  .stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-         padding:22px;min-height:320px}
-  .badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.8px;
-         text-transform:uppercase;padding:5px 12px;border-radius:8px;margin-bottom:14px}
-  .accepted .badge{background:var(--okbg);color:var(--ok);border:1px solid #1f3b27}
-  .candidate_selection .badge{background:var(--candbg);color:var(--cand);border:1px solid #30224d}
-  .recapture .badge{background:var(--warnbg);color:var(--warn);border:1px solid #3b3111}
-  .error .badge{background:var(--errbg);color:var(--err);border:1px solid #3b1f22}
-  .partno{font-size:34px;font-weight:700;letter-spacing:.5px;margin:2px 0 2px}
+
+  main{position:fixed;z-index:4;inset:0;display:flex;align-items:center;justify-content:center;
+       padding:70px 20px 140px;pointer-events:none}
+  .card{pointer-events:auto;width:min(680px,92vw);max-height:76vh;overflow:auto;
+        background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+        border:1px solid var(--line);border-radius:18px;padding:24px 26px;
+        box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  .badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+         padding:5px 12px;border-radius:8px;margin-bottom:14px}
+  .accepted .badge{background:#0f2417;color:var(--ok);border:1px solid #1f3b27}
+  .candidate_selection .badge{background:#1e1630;color:var(--cand);border:1px solid #30224d}
+  .recapture .badge{background:#2a230c;color:var(--warn);border:1px solid #3b3111}
+  .error .badge{background:#2a1113;color:var(--err);border:1px solid #3b1f22}
+  .partno{font-size:34px;font-weight:700;letter-spacing:.5px;margin:2px 0}
   .meta{color:var(--dim);font-size:14px;margin-bottom:16px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:560px){.grid{grid-template-columns:1fr}}
   .imgs{display:flex;gap:12px;flex-wrap:wrap}
-  .imgs figure{margin:0} .imgs img{max-width:220px;max-height:180px;border:1px solid var(--line);
-       border-radius:8px;background:#000} .imgs figcaption{color:var(--dim);font-size:11px;margin-top:4px}
+  .imgs img{max-width:200px;max-height:150px;border:1px solid var(--line);border-radius:8px;background:#000}
+  .imgs figcaption{color:var(--dim);font-size:11px;margin-top:4px}
   .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px}
   .kv .k{color:var(--dim)}
-  .btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 15px;
-       font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 15px;font-size:14px;
+       font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
   .btn:hover{filter:brightness(1.08)} .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+  .btn:disabled{opacity:.5;cursor:default}
   .cards{display:flex;flex-direction:column;gap:12px;margin-top:6px}
-  .card{display:flex;align-items:center;gap:16px;background:var(--panel2);
-        border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-  .card.chosen{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
-  .card .num{font-size:20px;font-weight:700} .card .sub{color:var(--dim);font-size:13px}
-  .card .score{margin-left:auto;text-align:right;color:var(--dim);font-size:13px}
+  .crow{display:flex;align-items:center;gap:14px;background:rgba(28,35,44,.7);border:1px solid var(--line);
+        border-radius:12px;padding:12px 14px}
+  .crow.chosen{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
+  .crow .num{font-size:19px;font-weight:700} .crow .sub{color:var(--dim);font-size:13px}
+  .crow .score{margin-left:auto;color:var(--dim);font-size:13px}
   .big-msg{font-size:22px;font-weight:600;margin:6px 0}
   .hint{color:var(--dim)}
-  .ocr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0b0f14;
-       border:1px solid var(--line);border-radius:8px;padding:10px;color:#b9c6d3;
-       white-space:pre-wrap;word-break:break-word;font-size:13px;max-height:120px;overflow:auto}
-  footer{position:fixed;bottom:0;left:0;right:0;background:var(--panel);
-         border-top:1px solid var(--line);padding:8px 18px;display:flex;
-         align-items:center;gap:16px;font-size:12px;color:var(--dim)}
-  .debug{display:none;max-width:1000px;margin:12px auto 0;background:var(--panel);
-         border:1px solid var(--line);border-radius:12px;padding:14px 18px;font-size:12.5px}
+  .ocr{font-family:ui-monospace,Menlo,monospace;background:rgba(5,8,12,.7);border:1px solid var(--line);
+       border-radius:8px;padding:10px;color:#b9c6d3;white-space:pre-wrap;word-break:break-word;
+       font-size:13px;max-height:110px;overflow:auto}
+
+  /* ---- datasheet Q&A dock (hands-free, voice via Whisper) ---- */
+  #qa{position:fixed;z-index:6;left:50%;transform:translateX(-50%);bottom:50px;width:min(680px,92vw);
+      display:none;background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+      border-radius:14px;padding:12px 14px}
+  #qa.show{display:block}
+  #qa .row{display:flex;gap:8px;align-items:center}
+  #qa input{flex:1;background:rgba(5,8,12,.6);border:1px solid var(--line);border-radius:8px;
+            color:var(--fg);padding:9px 12px;font-size:14px;outline:none}
+  #mic{font-size:16px;padding:9px 13px}
+  #mic.listening{background:#5fe3a1;color:#07241a;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
+  #qaout{margin-top:10px;font-size:14px;display:none}
+  #qaout.show{display:block}
+  #qaout .q{color:var(--dim)} #qaout .a{margin-top:4px}
+  #qaout .cite{margin-top:8px}
+
+  footer{position:fixed;z-index:6;bottom:0;left:0;right:0;display:flex;align-items:center;gap:16px;
+         padding:8px 18px;font-size:12px;color:var(--dim)}
+  label.sw{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+  .debug{position:fixed;z-index:7;right:14px;bottom:44px;width:360px;display:none;
+         background:rgba(13,17,23,.92);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12.5px}
   .debug.open{display:block}
   .debug table{border-collapse:collapse;width:100%} .debug td{padding:3px 10px 3px 0}
   .debug .k{color:var(--dim)} code{color:#9db4c9}
-  label.sw{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 </style>
 </head>
 <body>
+<canvas id="dust"></canvas>
+<div id="stage"></div>
+
 <header>
-  <h1>Datasheet Glasses <span class="sub">— laptop console</span></h1>
+  <h1><b>Jupiter</b> <span class="sub">· Datasheet Glasses</span></h1>
   <div class="spacer"></div>
   <span id="conn" class="chip off"><span class="dot"></span><span id="conntxt">connecting…</span></span>
   <span class="chip batt" title="device battery"><span>🔋</span>
@@ -78,195 +108,236 @@
      <span id="battmv">— V</span></span>
 </header>
 
-<main>
-  <div id="stage" class="stage">
-    <div class="big-msg">Ready</div>
-    <div class="hint">Waiting for a capture from the glasses… press the button on the device.</div>
-  </div>
-</main>
+<main><div id="card" class="card">
+  <div class="big-msg">Ready</div>
+  <div class="hint">Waiting for a capture from the glasses…</div>
+</div></main>
 
-<div id="debug" class="debug">
-  <strong>Debug</strong>
-  <table id="dbgtable"></table>
+<!-- hands-free datasheet Q&A (shown once a part is accepted) -->
+<div id="qa">
+  <div class="row">
+    <button id="mic" class="btn" title="ask by voice (Whisper)">🎙 Ask</button>
+    <input id="qinput" placeholder="…or type a datasheet question (e.g. max supply voltage)">
+    <button id="qsend" class="btn ghost">Send</button>
+  </div>
+  <div id="qaout">
+    <div class="q" id="qaq"></div>
+    <div class="a" id="qaa"></div>
+    <div class="cite" id="qacite"></div>
+  </div>
 </div>
 
+<div id="debug" class="debug"><strong>Debug</strong><table id="dbgtable"></table></div>
+
 <footer>
-  <label class="sw"><input type="checkbox" id="ttschk"> speak result (off by default)</label>
-  <label class="sw"><input type="checkbox" id="dbgchk"> debug panel</label>
-  <div class="spacer" style="flex:1"></div>
+  <label class="sw"><input type="checkbox" id="ttschk"> speak answers</label>
+  <label class="sw"><input type="checkbox" id="dbgchk"> debug</label>
+  <div class="spacer"></div>
   <span id="cfgline"></span>
 </footer>
 
 <script>
-const $ = s => document.querySelector(s);
-let ws, latestId = null, decisionStart = {}, chosen = {};
+const $ = id => document.getElementById(id);
+let ws, latestId=null, current=null, decisionStart={}, chosen={};
 
-// ---- connection ----
+/* ================= colours / orb state ================= */
+const COLORS = { idle:"#ffab4d", received:"#ffab4d", processing:"#8fb2ff",
+  accepted:"#2ea043", candidate_selection:"#d18bff", recapture:"#ffd166",
+  error:"#ff6b6b", listening:"#5fe3a1" };
+let orbState = "idle";
+let tokenPulse = 0, rippleT = 0;
+
+/* ================= websocket ================= */
 function connect(){
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onopen = () => setConn(true);
   ws.onclose = () => { setConn(false); setTimeout(connect, 1200); };
   ws.onerror = () => ws.close();
   ws.onmessage = ev => {
-    let m; try{ m = JSON.parse(ev.data); }catch{ return; }
-    if(m.type === "state" || m.type === "result"){
-      if(m.request_id){ latestId = m.request_id; refresh(m.request_id); }
-    }
+    let m; try{ m=JSON.parse(ev.data); }catch{ return; }
+    handle(m);
   };
 }
-function setConn(up){
-  const c = $("#conn");
-  c.className = "chip " + (up ? "live" : "off");
-  $("#conntxt").textContent = up ? "live" : "offline";
+function setConn(up){ const c=$("conn"); c.className="chip "+(up?"live":"off"); $("conntxt").textContent=up?"live":"offline"; }
+
+function handle(m){
+  if(m.type==="state"||m.type==="result"){
+    if(m.request_id){ latestId=m.request_id; if(m.status) orbState=m.status; tokenPulse=1; if(m.status==="accepted") rippleT=1; refresh(m.request_id); }
+  } else if(m.type==="listening"){ setMicListening(true); orbState="listening"; }
+  else if(m.type==="heard"){ setMicListening(false); showQ(m.text||"(nothing heard)"); }
+  else if(m.type==="answer"){ setMicListening(false); showAnswer(m); if(current) orbState=current.status; }
 }
 
-// ---- fetch canonical record + render ----
 async function refresh(id){
-  try{
-    const r = await fetch(`/result/${id}`);
-    if(!r.ok) return;
-    render(await r.json());
-  }catch{}
+  try{ const r=await fetch(`/result/${id}`); if(!r.ok) return; render(await r.json()); }catch{}
 }
 
+/* ================= result views ================= */
 function render(rec){
-  updateBattery(rec.battery_mv);
-  updateDebug(rec);
-  const s = rec.status, res = rec.result || {};
-  const stage = $("#stage");
-  stage.className = "stage " + s;
-  if(s === "accepted")                 stage.innerHTML = viewAccepted(rec, res);
-  else if(s === "candidate_selection") stage.innerHTML = viewCandidates(rec, res);
-  else if(s === "recapture")           stage.innerHTML = viewRecapture(res);
-  else if(s === "error")               stage.innerHTML = viewError(res);
-  else if(s === "processing")          stage.innerHTML = `<div class="big-msg">Processing…</div>
-                                         <div class="hint">Reading the marking and matching the catalog.</div>`;
-  else                                 stage.innerHTML = `<div class="big-msg">Received</div>`;
+  current = rec;
+  updateBattery(rec.battery_mv); updateDebug(rec);
+  const s=rec.status, res=rec.result||{}, card=$("card");
+  card.className="card "+s;
+  if(s==="accepted") card.innerHTML=viewAccepted(rec,res);
+  else if(s==="candidate_selection") card.innerHTML=viewCandidates(rec,res);
+  else if(s==="recapture") card.innerHTML=viewRecapture(res);
+  else if(s==="error") card.innerHTML=viewError(res);
+  else if(s==="processing") card.innerHTML=`<div class="big-msg">Processing…</div><div class="hint">Reading the marking and matching the catalog.</div>`;
+  else card.innerHTML=`<div class="big-msg">Received</div>`;
   wireCandidatePicks(rec);
-  maybeSpeak(rec);
+  // Q&A dock only when a part is accepted (walled off from identification)
+  $("qa").classList.toggle("show", s==="accepted");
+  if(s!=="accepted"){ $("qaout").classList.remove("show"); }
+  maybeSpeakResult(rec);
 }
-
 function esc(x){ return String(x==null?"":x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function dsLink(ds,label){ if(!ds||!ds.path) return `<span class="hint">no datasheet</span>`;
+  const p=ds.cite_page||1; return `<a class="btn" target="_blank" href="/pdf?path=${encodeURIComponent(ds.path)}#page=${p}">${label||"Open datasheet"} (p.${p})</a>`; }
 
-function dsLink(ds, label){
-  if(!ds || !ds.path) return `<span class="hint">no datasheet</span>`;
-  const page = ds.cite_page || 1;
-  return `<a class="btn" target="_blank" href="/pdf?path=${encodeURIComponent(ds.path)}#page=${page}">${label||"Open datasheet"} (p.${page})</a>`;
+function viewAccepted(rec,res){ const id=rec.request_id; return `
+  <span class="badge">Accepted</span>
+  <div class="partno">${esc(res.part_number)}</div>
+  <div class="meta">${esc(res.manufacturer)} · ${esc(res.package)}</div>
+  <div class="grid">
+    <div><div class="kv">
+        <div class="k">Score</div><div>${(res.score??0).toFixed(3)}</div>
+        <div class="k">Margin</div><div>${(res.margin??0).toFixed(3)}</div>
+        <div class="k">Matched</div><div><code>${esc(res.matched_string)}</code></div>
+      </div><p style="margin-top:14px">${dsLink(res.datasheet)}</p></div>
+    <div><div class="imgs">
+        <figure><img src="/media/${id}" onerror="this.style.display='none'"><figcaption>original</figcaption></figure>
+        <figure><img src="/media/${id}/crop" onerror="this.style.display='none'"><figcaption>crop</figcaption></figure>
+      </div><div class="k hint" style="margin-top:8px">OCR</div><div class="ocr">${esc(res.ocr_text)||"(none)"}</div></div>
+  </div>`;
 }
-
-function viewAccepted(rec, res){
-  const id = rec.request_id;
-  return `
-    <span class="badge">Accepted</span>
-    <div class="partno">${esc(res.part_number)}</div>
-    <div class="meta">${esc(res.manufacturer)} · ${esc(res.package)}</div>
-    <div class="grid">
-      <div>
-        <div class="kv">
-          <div class="k">Score</div><div>${(res.score??0).toFixed(3)}</div>
-          <div class="k">Margin</div><div>${(res.margin??0).toFixed(3)}</div>
-          <div class="k">Matched</div><div><code>${esc(res.matched_string)}</code></div>
-        </div>
-        <p style="margin-top:14px">${dsLink(res.datasheet)}</p>
-      </div>
-      <div>
-        <div class="imgs">
-          <figure><img src="/media/${id}" onerror="this.style.display='none'"><figcaption>original</figcaption></figure>
-          <figure><img src="/media/${id}/crop" onerror="this.style.display='none'"><figcaption>crop</figcaption></figure>
-        </div>
-        <div style="margin-top:10px" class="k hint">OCR</div>
-        <div class="ocr">${esc(res.ocr_text) || "(none)"}</div>
-      </div>
-    </div>`;
-}
-
-function viewCandidates(rec, res){
-  const id = rec.request_id;
-  if(decisionStart[id]===undefined) decisionStart[id] = performance.now();
-  const cards = (res.candidates||[]).map((c,i)=>{
-    const isChosen = chosen[id]===i;
-    return `<div class="card ${isChosen?'chosen':''}" data-i="${i}">
-      <div><div class="num">${esc(c.part_number)}</div>
-           <div class="sub">${esc(c.manufacturer)} · ${esc(c.package)}</div></div>
+function viewCandidates(rec,res){ const id=rec.request_id;
+  if(decisionStart[id]===undefined) decisionStart[id]=performance.now();
+  const rows=(res.candidates||[]).map((c,i)=>{ const ch=chosen[id]===i; return `
+    <div class="crow ${ch?'chosen':''}">
+      <div><div class="num">${esc(c.part_number)}</div><div class="sub">${esc(c.manufacturer)} · ${esc(c.package)}</div></div>
       <div class="score">score ${(c.score??0).toFixed(3)}</div>
       ${dsLink(c.datasheet,"Datasheet")}
-      <button class="btn pick" data-i="${i}" ${isChosen?'disabled':''}>${isChosen?'✓ selected':'This one'}</button>
-    </div>`;
-  }).join("");
-  const note = chosen[id]!==undefined ? `<div class="hint" style="margin-top:12px">Operator selected
-       <b>${esc((res.candidates[chosen[id]]||{}).part_number)}</b>. Decision logged separately.</div>` :
-       `<div class="hint" style="margin-top:12px">Several parts are plausible — pick the correct one.
-        Nothing is accepted until you choose.</div>`;
-  return `<span class="badge">Choose a candidate</span>
-          <div class="big-msg">${(res.candidates||[]).length} plausible matches</div>
-          <div class="cards">${cards}</div>${note}`;
+      <button class="btn pick" data-i="${i}" ${ch?'disabled':''}>${ch?'✓ selected':'This one'}</button>
+    </div>`;}).join("");
+  const note=chosen[id]!==undefined?`<div class="hint" style="margin-top:12px">Selected <b>${esc((res.candidates[chosen[id]]||{}).part_number)}</b>. Decision logged separately.</div>`
+    :`<div class="hint" style="margin-top:12px">Several parts are plausible — pick the correct one. Nothing is accepted until you choose.</div>`;
+  return `<span class="badge">Choose a candidate</span><div class="big-msg">${(res.candidates||[]).length} plausible matches</div><div class="cards">${rows}</div>${note}`;
 }
+function wireCandidatePicks(rec){ const id=rec.request_id;
+  document.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ const i=+b.dataset.i;
+    const ms=performance.now()-(decisionStart[id]||performance.now()); chosen[id]=i;
+    try{ ws.send(JSON.stringify({type:"user_decision",request_id:id,ms:Math.round(ms)})); }catch{}
+    render(rec); });
+}
+function viewRecapture(res){ const ic={blur:"🌫",glare:"✨",off_center:"🎯",too_far:"🔭",unreadable:"❓"};
+  return `<span class="badge">Recapture</span><div class="big-msg">${ic[res.reason]||"↺"} ${esc((res.reason||"").replace("_"," "))}</div><div class="hint" style="font-size:16px">${esc(res.message)}</div>`; }
+function viewError(res){ return `<span class="badge">Error</span><div class="big-msg">${esc(res.code)}</div><div class="hint">${esc(res.message)}</div>`; }
 
-function wireCandidatePicks(rec){
-  const id = rec.request_id;
-  document.querySelectorAll(".pick").forEach(btn=>{
-    btn.onclick = ()=>{
-      const i = +btn.dataset.i;
-      const ms = performance.now() - (decisionStart[id]||performance.now());
-      chosen[id] = i;
-      try{ ws.send(JSON.stringify({type:"user_decision", request_id:id, ms:Math.round(ms)})); }catch{}
-      render(rec);  // re-render to show chosen state (client-side; server stays candidate)
-    };
-  });
+/* ================= datasheet Q&A (Whisper + grounded answer) ================= */
+function setMicListening(on){ $("mic").classList.toggle("listening",on); $("mic").textContent=on?"● listening":"🎙 Ask"; }
+function showQ(text){ $("qaout").classList.add("show"); $("qaq").textContent="Q: "+text; $("qaa").textContent="…"; $("qacite").innerHTML=""; }
+function showAnswer(m){
+  $("qaout").classList.add("show");
+  if(m.question) $("qaq").textContent="Q: "+m.question;
+  if(!m.available){ $("qaa").textContent="Unavailable — "+(m.reason||"not in datasheet."); $("qacite").innerHTML=""; return; }
+  $("qaa").textContent="A: "+m.answer;
+  const c=m.citation||{}; const ds=(current&&current.result&&current.result.datasheet)||{};
+  const link = ds.path ? ` · <a target="_blank" href="/pdf?path=${encodeURIComponent(ds.path)}#page=${c.page||1}">open p.${c.page}</a>`:"";
+  $("qacite").innerHTML=`<span class="hint">source: ${esc(m.source||"")} · ${esc(m.part_number||"")} p.${c.page||"?"}${link}</span>`;
 }
+function askText(){ const q=$("qinput").value.trim(); if(!q||!current) return;
+  showQ(q); $("qinput").value=""; try{ ws.send(JSON.stringify({type:"ask",request_id:current.request_id,question:q})); }catch{} }
+$("qsend").onclick=askText;
+$("qinput").addEventListener("keydown",e=>{ if(e.key==="Enter") askText(); });
+$("mic").onclick=()=>{ if(!current) return; setMicListening(true); $("qaout").classList.add("show"); $("qaq").textContent="Q: (listening…)"; $("qaa").textContent="";
+  try{ ws.send(JSON.stringify({type:"ask_voice",request_id:current.request_id})); }catch{} };
 
-function viewRecapture(res){
-  const icons = {blur:"🌫",glare:"✨",off_center:"🎯",too_far:"🔭",unreadable:"❓"};
-  return `<span class="badge">Recapture</span>
-    <div class="big-msg">${icons[res.reason]||"↺"} ${esc((res.reason||"").replace("_"," "))}</div>
-    <div class="hint" style="font-size:16px">${esc(res.message)}</div>`;
-}
-function viewError(res){
-  return `<span class="badge">Error</span>
-    <div class="big-msg">${esc(res.code)}</div>
-    <div class="hint">${esc(res.message)}</div>`;
-}
+/* ================= battery / debug / tts ================= */
+function updateBattery(mv){ if(!mv) return; const v=mv/1000; $("battmv").textContent=v.toFixed(2)+" V";
+  const pct=Math.max(0,Math.min(100,(v-3.3)/(4.2-3.3)*100)); const f=$("battfill"); f.style.width=pct+"%";
+  f.style.background=pct<20?"var(--err)":pct<45?"var(--warn)":"var(--ok)"; }
+function updateDebug(rec){ $("cfgline").textContent=rec.config_version?`${rec.config_version} · ${(rec.config_hash||"").slice(0,19)}…`:"";
+  const t=rec.timestamps||{}; const rows=Object.keys(t).map(k=>`<tr><td class="k">${k}</td><td>${(t[k]*1000).toFixed(1)} ms</td></tr>`).join("");
+  const dec=rec.user_decision_ms!=null?`<tr><td class="k">user decision</td><td>${rec.user_decision_ms.toFixed(0)} ms (excluded)</td></tr>`:"";
+  $("dbgtable").innerHTML=`<tr><td class="k">request_id</td><td><code>${esc(rec.request_id)}</code></td></tr>
+    <tr><td class="k">status</td><td>${esc(rec.status)}</td></tr>
+    <tr><td class="k">config</td><td><code>${esc(rec.config_version)}</code></td></tr>
+    <tr><td class="k">hash</td><td><code>${esc(rec.config_hash)}</code></td></tr>${rows}${dec}`; }
+const spoken={};
+async function maybeSpeakResult(rec){ if(!$("ttschk").checked) return;
+  const term=["accepted","candidate_selection","recapture","error"]; if(!term.includes(rec.status)) return;
+  if(spoken[rec.request_id]===rec.status) return; spoken[rec.request_id]=rec.status;
+  const r=rec.result||{}; let text=rec.status==="accepted"?`Accepted. ${r.part_number}.`:
+    rec.status==="candidate_selection"?`${(r.candidates||[]).length} possible matches.`:
+    rec.status==="recapture"?(r.message||"Please recapture."):"Error.";
+  try{ await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})}); }catch{} }
+$("dbgchk").onchange=e=>$("debug").classList.toggle("open",e.target.checked);
 
-// ---- battery / debug / tts ----
-function updateBattery(mv){
-  if(!mv){ return; }
-  const v = mv/1000;
-  $("#battmv").textContent = v.toFixed(2)+" V";
-  // rough li-ion gauge 3.3–4.2 V
-  const pct = Math.max(0, Math.min(100, (v-3.3)/(4.2-3.3)*100));
-  const fill = $("#battfill"); fill.style.width = pct+"%";
-  fill.style.background = pct<20 ? "var(--err)" : pct<45 ? "var(--warn)" : "var(--ok)";
+/* ================= Jupiter orb (from JarvisV3 web shell) ================= */
+const TW=1024, TH=512;
+function makeJupiterTexture(){
+  const c=document.createElement("canvas"); c.width=TW; c.height=TH; const s=c.getContext("2d");
+  const stops=[[0,"#7d5236"],[.06,"#a8764f"],[.13,"#e2c49a"],[.20,"#b06a3c"],[.27,"#ecd9b4"],[.34,"#c07848"],
+    [.41,"#f2e3c0"],[.48,"#a85c34"],[.55,"#e6c697"],[.62,"#c98d5a"],[.70,"#f0dcb2"],[.78,"#b5754a"],[.86,"#96613f"],[.93,"#84543a"],[1,"#6d4630"]];
+  const lg=s.createLinearGradient(0,0,0,TH); stops.forEach(([p,col])=>lg.addColorStop(p,col)); s.fillStyle=lg; s.fillRect(0,0,TW,TH);
+  for(let i=0;i<1100;i++){ const y=Math.random()*TH,x=Math.random()*TW,w=30+Math.random()*220,h=1.5+Math.random()*6;
+    s.fillStyle=Math.random()>.5?`rgba(255,242,218,${.03+Math.random()*.09})`:`rgba(110,55,22,${.03+Math.random()*.09})`;
+    for(const xx of [x,x-TW,x+TW]){ s.beginPath(); s.ellipse(xx,y,w,h,0,0,7); s.fill(); } }
+  const gx=TW*.32,gy=TH*.63;
+  for(let r=6;r>0;r--){ s.fillStyle=`rgba(${168-r*8},${64-r*5},${30-r*2},.16)`;
+    for(const xx of [gx,gx-TW,gx+TW]){ s.beginPath(); s.ellipse(xx,gy,16+r*13,7+r*5.2,-0.12,0,7); s.fill(); } }
+  return c;
 }
-function updateDebug(rec){
-  $("#cfgline").textContent = rec.config_version ? `${rec.config_version} · ${(rec.config_hash||"").slice(0,19)}…` : "";
-  const t = rec.timestamps||{};
-  const rows = Object.keys(t).map(k=>`<tr><td class="k">${k}</td><td>${(t[k]*1000).toFixed(1)} ms</td></tr>`).join("");
-  const dec = rec.user_decision_ms!=null ? `<tr><td class="k">user decision</td><td>${rec.user_decision_ms.toFixed(0)} ms (excluded from latency)</td></tr>` : "";
-  $("#dbgtable").innerHTML =
-    `<tr><td class="k">request_id</td><td><code>${esc(rec.request_id)}</code></td></tr>
-     <tr><td class="k">status</td><td>${esc(rec.status)}</td></tr>
-     <tr><td class="k">config</td><td><code>${esc(rec.config_version)}</code></td></tr>
-     <tr><td class="k">hash</td><td><code>${esc(rec.config_hash)}</code></td></tr>
-     ${rows}${dec}`;
+let three=null; const FIT_RADIUS=2.15; const stage=$("stage");
+function initThree(){
+  if(!window.THREE){ return; }
+  const renderer=new THREE.WebGLRenderer({alpha:true,antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  stage.prepend(renderer.domElement);
+  const scene=new THREE.Scene(); const camera=new THREE.PerspectiveCamera(38,1,.1,100);
+  const group=new THREE.Group(); group.rotation.z=-0.09; scene.add(group);
+  const tex=new THREE.CanvasTexture(makeJupiterTexture()); tex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  const sphere=new THREE.Mesh(new THREE.SphereGeometry(1,64,48), new THREE.MeshStandardMaterial({map:tex,roughness:.92,metalness:0})); group.add(sphere);
+  const glowMat=new THREE.MeshBasicMaterial({color:0xffab4d,transparent:true,opacity:.14,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false});
+  const glow=new THREE.Mesh(new THREE.SphereGeometry(1,48,32),glowMat); glow.scale.setScalar(1.18); group.add(glow);
+  const rings=[]; [[1.45,.12,.0011],[1.65,.06,-.0018],[1.85,.1,.0007]].forEach(([rad,dash,v],i)=>{
+    const pts=[]; for(let a=0;a<=128;a++){ const th=a/128*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(th)*rad,Math.sin(th)*rad,0)); }
+    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineDashedMaterial({color:0xffab4d,transparent:true,opacity:.32,dashSize:.12+dash,gapSize:.08+dash*.6}));
+    line.computeLineDistances(); line.rotation.x=1.25+i*.1; line.userData.v=v; rings.push(line); scene.add(line); });
+  const key=new THREE.DirectionalLight(0xfff1da,1.35); key.position.set(-2.4,1.7,2.6); scene.add(key); scene.add(new THREE.AmbientLight(0xffd9aa,.30));
+  three={renderer,scene,camera,group,sphere,glow,glowMat,rings}; resize3d();
 }
-const spoken = {};
-async function maybeSpeak(rec){
-  if(!$("#ttschk").checked) return;
-  const terminal = ["accepted","candidate_selection","recapture","error"];
-  if(!terminal.includes(rec.status)) return;
-  if(spoken[rec.request_id]===rec.status) return;
-  spoken[rec.request_id] = rec.status;
-  let text = "";
-  const r = rec.result||{};
-  if(rec.status==="accepted") text = `Accepted. ${r.part_number}.`;
-  else if(rec.status==="candidate_selection") text = `${(r.candidates||[]).length} possible matches. Please choose.`;
-  else if(rec.status==="recapture") text = r.message||"Please recapture.";
-  else text = "Error.";
-  try{ await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})}); }catch{}
-}
+function resize3d(){ if(!three) return; const w=Math.max(innerWidth,1),h=Math.max(innerHeight,1);
+  three.renderer.setSize(w,h); three.camera.aspect=w/h; const hf=three.camera.fov*Math.PI/360;
+  const fitV=FIT_RADIUS/Math.tan(hf), fitH=FIT_RADIUS/(Math.tan(hf)*three.camera.aspect);
+  three.camera.position.z=Math.max(fitV,fitH)*1.18; three.camera.updateProjectionMatrix(); }
+addEventListener("resize",resize3d);
 
-$("#dbgchk").onchange = e => $("#debug").classList.toggle("open", e.target.checked);
-
+/* dust + render loop */
+let cur={r:255,g:171,b:77}, lastT=0;
+const dcv=$("dust"), dctx=dcv.getContext("2d");
+function sizeDust(){ dcv.width=innerWidth; dcv.height=innerHeight; } sizeDust(); addEventListener("resize",sizeDust);
+const dust=Array.from({length:70},()=>({x:Math.random(),y:Math.random(),v:.00016+Math.random()*.0005,s:.6+Math.random()*1.7,o:.04+Math.random()*.12}));
+function hex2rgb(h){ return {r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)}; }
+function draw(t){
+  requestAnimationFrame(draw); const dt=lastT?Math.min(t-lastT,50):16; lastT=t;
+  const tg=hex2rgb(COLORS[orbState]||COLORS.idle);
+  cur.r+=(tg.r-cur.r)*.05; cur.g+=(tg.g-cur.g)*.05; cur.b+=(tg.b-cur.b)*.05;
+  const col=a=>`rgba(${cur.r|0},${cur.g|0},${cur.b|0},${a})`;
+  dctx.clearRect(0,0,dcv.width,dcv.height);
+  for(const p of dust){ p.y-=p.v; if(p.y<-0.02){p.y=1.02;p.x=Math.random();} dctx.fillStyle=col(p.o); dctx.fillRect(p.x*dcv.width,p.y*dcv.height,p.s,p.s); }
+  tokenPulse*=.92; if(rippleT>0) rippleT-=.03;
+  if(!three) return;
+  const speed={idle:.8,received:1,processing:2.6,listening:1.8,accepted:1.2,candidate_selection:1.4,recapture:1,error:1}[orbState]||1;
+  const {group,sphere,glow,glowMat,rings}=three;
+  sphere.rotation.y+=dt*.00016*(.6+speed*.6);
+  const breath=1+Math.sin(t*.0016*speed)*.015; group.scale.setScalar(breath+tokenPulse*.06);
+  const c3=(cur.r<<16)|(cur.g<<8)|(cur.b|0);
+  glowMat.color.setHex(c3); glowMat.opacity=.12+tokenPulse*.22+rippleT*.3; glow.scale.setScalar(1.18+rippleT*.5);
+  for(const ring of rings){ ring.material.color.setHex(c3); ring.rotation.z+=ring.userData.v*dt*speed; }
+  three.renderer.render(three.scene,three.camera);
+}
+initThree(); requestAnimationFrame(draw);
 connect();
 </script>
 </body>

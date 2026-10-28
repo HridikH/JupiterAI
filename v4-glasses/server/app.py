@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Callable, Optional
@@ -74,6 +75,12 @@ def create_app(store: Optional[StateStore] = None,
     app = FastAPI(title="Glasses datasheet server", lifespan=lifespan)
     app.state.store = store
     app.state.hub = hub
+
+    # serve vendored UI assets (three.min.js, etc.) locally so the demo is offline
+    assets_dir = config.UI_WEB_DIR / "assets"
+    if assets_dir.exists():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
     def _err(exc: protocol.ProtocolError, request_id: str = "") -> JSONResponse:
         return JSONResponse(
@@ -181,6 +188,36 @@ def create_app(store: Optional[StateStore] = None,
             return HTMLResponse(idx.read_text())
         return HTMLResponse("<h1>Glasses server</h1><p>UI not built yet (stage 4).</p>")
 
+    def _answer_question(rid: str, question: str) -> None:
+        """Datasheet Q&A for an ACCEPTED part. Walled off from identification."""
+        from . import datasheet_qa, readout
+        rec = store.get(rid)
+        part = (rec.result or {}).get("part_number") if rec else None
+        if not rec or rec.status != "accepted" or not part:
+            hub.emit("answer", request_id=rid, question=question, available=False,
+                     reason="ask after a part is accepted")
+            return
+        if not question.strip():
+            hub.emit("answer", request_id=rid, question=question, available=False,
+                     reason="empty question")
+            return
+        ans = datasheet_qa.answer(part, question)
+        hub.emit("answer", request_id=rid, question=question, part_number=part, **ans)
+        if config.TTS_READOUT_ENABLED and ans.get("available"):
+            cite = ans.get("citation", {})
+            readout.speak(f"{ans['answer']} Source: page {cite.get('page')}.")
+
+    def _voice_ask(rid: str) -> None:
+        from . import voice
+        if not voice.available():
+            hub.emit("answer", request_id=rid, available=False,
+                     reason="voice stack not installed (mlx-whisper + sounddevice)")
+            return
+        hub.emit("listening", request_id=rid)
+        text = voice.listen_once_text()
+        hub.emit("heard", request_id=rid, text=text)
+        _answer_question(rid, text)
+
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
         await websocket.accept()
@@ -193,6 +230,13 @@ def create_app(store: Optional[StateStore] = None,
                     # U3: UI reports operator decision time on the candidate screen
                     store.set_user_decision(msg.get("request_id", ""),
                                             float(msg.get("ms", 0.0)))
+                elif cmd == "ask":                     # text datasheet question
+                    threading.Thread(target=_answer_question,
+                                     args=(msg.get("request_id", ""), msg.get("question", "")),
+                                     daemon=True).start()
+                elif cmd == "ask_voice":               # spoken datasheet question (Whisper)
+                    threading.Thread(target=_voice_ask, args=(msg.get("request_id", ""),),
+                                     daemon=True).start()
                 elif cmd == "ping":
                     await websocket.send_json({"type": "pong"})
         except WebSocketDisconnect:

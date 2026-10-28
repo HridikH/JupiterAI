@@ -44,6 +44,23 @@ make run            # start server + open the console window (Chromium --app)
 `make run` is the single "launch server + UI together" command. To run the server
 alone (e.g. for the simulator): `make server`.
 
+### Jupiter console + hands-free datasheet Q&A
+The console uses the JarvisV3 **Jupiter orb** visual (vendored `ui/web/assets/three.min.js`,
+so it renders offline); the orb's colour tracks pipeline state (amber idle, blue
+processing, green accepted, purple candidate, yellow recapture, red error, cyan
+listening). Once a part is **accepted**, a Q&A dock appears:
+
+- **🎙 Ask** — speak a question; **Whisper** (mlx-whisper, mic via Python) transcribes
+  it and the answer comes back **grounded in the cached datasheet with a page citation**.
+- or type the question.
+
+> **WALL:** voice/LLM are used ONLY to answer questions about an *already-accepted*
+> part's datasheet — never to identify a part. Identification stays deterministic
+> catalog matching. Default answers are **extractive** (no model); set
+> `GLASSES_DATASHEET_QA=1` for grounded Qwen phrasing, `GLASSES_TTS_READOUT=1` for
+> spoken answers. First voice use triggers a **macOS mic permission** prompt for the
+> Python process, and downloads the Whisper model (~1.5 GB) once.
+
 > **macOS OCR:** the default OCR backend is Apple Vision via `pyobjc`. If the
 > doctor warns it's unavailable, `pip install pyobjc-framework-Vision
 > pyobjc-framework-Quartz` inside `.venv`, or set `GLASSES_OCR_BACKEND=easy`

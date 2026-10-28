@@ -28,8 +28,15 @@ pymupdf==1.25.1          # per-page text extraction + open PDF at page
 pytest==8.3.4
 httpx==0.28.1            # FastAPI TestClient dependency
 
-# ---- optional datasheet Q&A / TTS readout ----
-# Reuse the parent repo's MLX stack only if GLASSES_DATASHEET_QA / TTS_READOUT
-# are enabled. Not required for identification.
-# mlx-lm>=0.21
-# mlx-audio>=0.1
+# ---- optional: hands-free datasheet Q&A (Whisper STT) + spoken answers ----
+# Reuses the parent JarvisV3 MLX stack. NOT required for identification and never
+# on the ID path — voice only answers questions about an already-accepted part.
+# Installed for the integrated Jupiter UI; comment out for an ID-only deployment.
+mlx>=0.21
+mlx-whisper>=0.4        # voice question -> text (jarvis.stt)
+mlx-lm>=0.21            # optional grounded datasheet answers (else extractive)
+mlx-audio>=0.1          # optional spoken answers (Kokoro)
+misaki[en]>=0.6         # Kokoro English G2P
+sounddevice             # laptop mic capture (PortAudio bundled in wheel)
+soundfile
+webrtcvad-wheels        # utterance detection for listen_once
