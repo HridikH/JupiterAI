@@ -71,3 +71,59 @@ def listen_once_text(timeout_s: float = 8.0) -> str:
     with MicStream() as mic:
         text = listen_once(mic, transcriber, detector=UtteranceDetector(), stop=stop)
     return (text or "").strip()
+
+
+# ---- always-listening loop (voice commands + datasheet questions) -----------
+_listen_thread: threading.Thread | None = None
+_listen_stop = threading.Event()
+
+
+def is_listening() -> bool:
+    return _listen_thread is not None and _listen_thread.is_alive()
+
+
+def start_always_listening(on_transcript) -> bool:
+    """Continuously transcribe utterances and hand each to on_transcript(text).
+
+    Keeps the mic open across utterances (lower latency than reopening). The mic
+    stays in Python; the browser is only a control surface. Returns False if the
+    voice stack is unavailable. Idempotent.
+
+    NOTE (from the parent repo): with open speakers the VAD can hear TTS and
+    self-trigger — use headphones or macOS Voice Isolation for a clean demo.
+    """
+    global _listen_thread
+    if not available():
+        return False
+    if is_listening():
+        return True
+    _ensure()
+    _listen_stop.clear()
+
+    def loop():
+        sys.path.insert(0, str(_PARENT))
+        from jarvis.stt import listen_once
+        from jarvis.audio import UtteranceDetector
+        MicStream = _state["mic"]
+        transcriber = _state["transcriber"]
+        log.info("always-listening started")
+        try:
+            with MicStream() as mic:
+                while not _listen_stop.is_set():
+                    text = listen_once(mic, transcriber,
+                                       detector=UtteranceDetector(), stop=_listen_stop)
+                    if text and text.strip() and not _listen_stop.is_set():
+                        try:
+                            on_transcript(text.strip())
+                        except Exception as e:  # a bad command must not kill the loop
+                            log.warning(f"voice handler error: {e}")
+        except Exception as e:
+            log.warning(f"always-listening stopped: {e}")
+
+    _listen_thread = threading.Thread(target=loop, daemon=True)
+    _listen_thread.start()
+    return True
+
+
+def stop_always_listening() -> None:
+    _listen_stop.set()

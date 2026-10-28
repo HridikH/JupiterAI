@@ -53,6 +53,15 @@ DATASHEET_QA_ENABLED = os.getenv("GLASSES_DATASHEET_QA", "0") == "1"
 # ---- Optional TTS readout (Kokoro) ------------------------------------------
 TTS_READOUT_ENABLED = os.getenv("GLASSES_TTS_READOUT", "0") == "1"
 
+# ---- Voice control ----------------------------------------------------------
+# Always-listening voice command loop (show/hide pinout, datasheet questions).
+# Off by default so tests / headless runs never grab the mic; the launcher sets
+# GLASSES_VOICE_ALWAYS=1, and the UI can toggle it over the WebSocket.
+VOICE_ALWAYS = os.getenv("GLASSES_VOICE_ALWAYS", "0") == "1"
+
+# ---- Live camera feed (MJPEG) -----------------------------------------------
+STREAM_FPS = int(os.getenv("GLASSES_STREAM_FPS", "12"))
+
 
 def ensure_dirs() -> None:
     for d in (DATA_DIR, CAPTURES_DIR, LOG_DIR):

@@ -9,10 +9,12 @@ idf_component_register(
         "battery.c"
         "net.c"
         "uploader.c"
+        "stream.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp32-camera
         esp_http_client
+        esp_http_server
         esp_wifi
         esp_adc
         nvs_flash

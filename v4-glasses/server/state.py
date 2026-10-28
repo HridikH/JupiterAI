@@ -96,6 +96,15 @@ class StateStore:
         with self._lock:
             return list(self._records)
 
+    def latest_accepted(self) -> Optional[RequestRecord]:
+        """Most recently accepted record — the subject of voice/pinout commands."""
+        with self._lock:
+            for rid in reversed(self._records):
+                rec = self._records[rid]
+                if rec.status == "accepted":
+                    return rec
+            return None
+
     def clear(self) -> None:
         with self._lock:
             self._records.clear()

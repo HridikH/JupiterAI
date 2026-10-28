@@ -21,6 +21,7 @@
 #include "battery.h"
 #include "net.h"
 #include "uploader.h"
+#include "stream.h"
 
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -90,6 +91,10 @@ void app_main(void)
     ESP_ERROR_CHECK(camera_init());
     if (af_load_firmware() != ESP_OK)
         ESP_LOGW(TAG, "autofocus unavailable (add af_firmware.inc) — captures will be fixed-focus");
+
+    // live MJPEG feed for the laptop overlay (option B); independent of capture path
+    if (stream_start() != ESP_OK)
+        ESP_LOGW(TAG, "live feed unavailable");
 
     status_led_set(LED_STATE_READY);
     ESP_LOGI(TAG, "glasses ready");

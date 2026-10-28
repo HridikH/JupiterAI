@@ -19,6 +19,40 @@
   #stage{position:fixed;inset:0;z-index:1}
   #stage canvas{display:block}
 
+  /* ---- live camera feed + pinout overlay (option B) ---- */
+  #feedwrap{position:fixed;z-index:3;top:74px;left:50%;transform:translateX(-50%);
+            width:min(460px,46vw);aspect-ratio:4/3;border:1px solid var(--line);
+            border-radius:16px;overflow:hidden;background:#000;
+            box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  #feed{width:100%;height:100%;object-fit:cover;display:block;opacity:.98}
+  #feedtag{position:absolute;top:8px;left:10px;z-index:4;font-size:11px;color:#cfe;
+           background:rgba(0,0,0,.45);padding:2px 8px;border-radius:999px;display:flex;align-items:center;gap:6px}
+  #feedtag .rec{width:7px;height:7px;border-radius:50%;background:#f85149;animation:blink 1.4s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  #pinoverlay{position:absolute;inset:0;z-index:5;display:none;pointer-events:none}
+  #pinoverlay.show{display:block}
+  #pinoverlay .side{position:absolute;top:8%;height:84%;display:flex;flex-direction:column;
+                    justify-content:space-around}
+  #pinoverlay .left{left:4%;align-items:flex-start} #pinoverlay .right{right:4%;align-items:flex-end}
+  .pintag{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+          background:rgba(10,14,20,.78);border:1px solid #3b4a5a;border-radius:7px;
+          padding:3px 8px;color:#e6edf3;backdrop-filter:blur(3px)}
+  #pinoverlay .right .pintag{flex-direction:row-reverse}
+  .pintag .no{background:#ffab4d;color:#241400;border-radius:50%;width:18px;height:18px;
+              display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto}
+  #pinoverlay .title{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:11px;color:var(--dim)}
+
+  /* voice / overlay control bar under the feed */
+  #vbar{position:fixed;z-index:6;top:calc(74px + min(345px,34.5vw));left:50%;transform:translateX(-50%);
+        display:flex;gap:8px;align-items:center}
+  #vbar .pill{font-size:12px;padding:6px 11px;border-radius:999px;border:1px solid var(--line);
+              background:rgba(13,17,23,.7);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  #vbar .pill.on{border-color:#1f3b27;color:var(--ok)}
+  #vbar .earon{width:8px;height:8px;border-radius:50%;background:#5fe3a1;animation:blink 1.1s infinite}
+  #vbar .earoff{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  #heard{position:fixed;z-index:6;top:calc(74px + min(345px,34.5vw) + 34px);left:50%;transform:translateX(-50%);
+         max-width:70vw;font-size:12px;color:var(--dim);text-align:center}
+
   header{position:fixed;z-index:5;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;
          padding:12px 18px}
   header h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.4px}
@@ -32,9 +66,9 @@
   .batt .bar{width:46px;height:8px;border:1px solid var(--line);border-radius:3px;overflow:hidden}
   .batt .fill{height:100%;background:var(--ok)}
 
-  main{position:fixed;z-index:4;inset:0;display:flex;align-items:center;justify-content:center;
+  main{position:fixed;z-index:4;inset:0;display:flex;align-items:center;justify-content:flex-end;
        padding:70px 20px 140px;pointer-events:none}
-  .card{pointer-events:auto;width:min(680px,92vw);max-height:76vh;overflow:auto;
+  .card{pointer-events:auto;width:min(400px,40vw);max-height:76vh;overflow:auto;
         background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
         border:1px solid var(--line);border-radius:18px;padding:24px 26px;
         box-shadow:0 20px 60px rgba(0,0,0,.45)}
@@ -108,6 +142,22 @@
      <span id="battmv">— V</span></span>
 </header>
 
+<!-- live camera feed (MJPEG) with pinout overlay -->
+<div id="feedwrap">
+  <span id="feedtag"><span class="rec"></span>LIVE</span>
+  <img id="feed" alt="camera feed">
+  <div id="pinoverlay">
+    <div class="side left" id="pinleft"></div>
+    <div class="side right" id="pinright"></div>
+    <div class="title" id="pintitle"></div>
+  </div>
+</div>
+<div id="vbar">
+  <button class="pill" id="pinbtn">▢ Pinout</button>
+  <button class="pill" id="earbtn"><span class="earoff" id="eardot"></span>Voice</button>
+</div>
+<div id="heard"></div>
+
 <main><div id="card" class="card">
   <div class="big-msg">Ready</div>
   <div class="hint">Waiting for a capture from the glasses…</div>
@@ -164,9 +214,34 @@ function handle(m){
   if(m.type==="state"||m.type==="result"){
     if(m.request_id){ latestId=m.request_id; if(m.status) orbState=m.status; tokenPulse=1; if(m.status==="accepted") rippleT=1; refresh(m.request_id); }
   } else if(m.type==="listening"){ setMicListening(true); orbState="listening"; }
-  else if(m.type==="heard"){ setMicListening(false); showQ(m.text||"(nothing heard)"); }
+  else if(m.type==="heard"){ setMicListening(false); $("heard").textContent=m.text?("heard: “"+m.text+"”"):""; showQ(m.text||"(nothing heard)"); }
   else if(m.type==="answer"){ setMicListening(false); showAnswer(m); if(current) orbState=current.status; }
+  else if(m.type==="pinout"){ renderPinout(m); }
+  else if(m.type==="voice_state"){ setVoiceAlways(m.listening); }
 }
+
+/* ================= live feed + pinout overlay ================= */
+let pinoutOn=false;
+function renderPinout(m){
+  pinoutOn = !!m.visible && (m.pins||[]).length>0;
+  $("pinbtn").classList.toggle("on", pinoutOn);
+  const ov=$("pinoverlay"); ov.classList.toggle("show", pinoutOn);
+  if(!pinoutOn){ if(m.reason) $("heard").textContent=m.reason; return; }
+  const pins=[...m.pins].sort((a,b)=>a.no-b.no);
+  const half=Math.ceil(pins.length/2);
+  const left=pins.slice(0,half);               // DIP: 1..h down the left
+  const right=pins.slice(half).reverse();      // h+1..N up the right (then shown top→bottom)
+  const tag=p=>`<div class="pintag" title="${(p.desc||'').replace(/"/g,'')}"><span class="no">${p.no}</span><span>${p.name}</span></div>`;
+  $("pinleft").innerHTML=left.map(tag).join("");
+  $("pinright").innerHTML=right.map(tag).join("");
+  $("pintitle").textContent=`${m.part||""} pinout (DIP view)`;
+}
+function initFeed(){ const f=$("feed"); f.src="/stream"; f.onerror=()=>{ setTimeout(()=>{ f.src="/stream?"+Date.now(); },1500); }; }
+function setVoiceAlways(on){ $("earbtn").classList.toggle("on",!!on);
+  $("eardot").className=on?"earon":"earoff"; $("earbtn").lastChild.textContent=on?" Voice on":" Voice"; }
+$("pinbtn").onclick=()=>{ try{ ws.send(JSON.stringify({type:"pinout",visible:!pinoutOn})); }catch{} };
+$("earbtn").onclick=()=>{ const on=!$("earbtn").classList.contains("on");
+  try{ ws.send(JSON.stringify({type:"voice_always",on})); }catch{} };
 
 async function refresh(id){
   try{ const r=await fetch(`/result/${id}`); if(!r.ok) return; render(await r.json()); }catch{}
@@ -338,6 +413,7 @@ function draw(t){
   three.renderer.render(three.scene,three.camera);
 }
 initThree(); requestAnimationFrame(draw);
+initFeed();
 connect();
 </script>
 </body>

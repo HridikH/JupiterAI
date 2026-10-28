@@ -54,6 +54,28 @@ listening). Once a part is **accepted**, a Q&A dock appears:
   it and the answer comes back **grounded in the cached datasheet with a page citation**.
 - or type the question.
 
+### Live camera feed + pinout overlay + always-listening voice (option B)
+The console shows a **live MJPEG feed** (`<img src="/stream">`). For real hardware the
+firmware runs an on-device MJPEG server (`firmware/main/stream.c`, `:81/stream`); for a
+hardware-free demo push frames with the simulator:
+
+```bash
+# terminal 2, alongside a fake accepted part:
+python -m tools.make_sample_part --marking NE555P --line2 "TI 7M4"
+python -m tools.fake_device  --token dev --image eval/datasets/samples/ne555p.jpg   # accept
+python -m tools.stream_sim   --token dev --image eval/datasets/samples/ne555p.jpg   # live feed
+```
+
+A **pinout overlay** (DIP-style pin map from the datasheet's Pin Functions table, e.g.
+GND→1, VCC→8) draws over the feed. Toggle it:
+
+- **Voice:** say *"show pinout"* / *"hide pinout"* (always-listening).
+- **Button:** the ▢ Pinout pill, or the UI **Voice** pill to start/stop listening.
+
+Enable always-listening at launch with `GLASSES_VOICE_ALWAYS=1` (off by default so tests /
+headless runs never grab the mic). Voice commands are matched **deterministically** (regex,
+no LLM); unmatched speech becomes a datasheet question about the last accepted part.
+
 > **WALL:** voice/LLM are used ONLY to answer questions about an *already-accepted*
 > part's datasheet — never to identify a part. Identification stays deterministic
 > catalog matching. Default answers are **extractive** (no model); set

@@ -1,0 +1,85 @@
+"""Live-feed simulator — push JPEG frames to the server so the UI shows a feed
+without hardware (option B).
+
+Streams a single image (optionally animated with a moving marker, or a folder of
+frames) to POST /frame at a target FPS. Pair with tools/fake_device.py to also
+drive an accepted part so the pinout overlay has data.
+
+    python -m tools.stream_sim --token dev --image eval/datasets/samples/ne555p.jpg
+    python -m tools.stream_sim --token dev --dir eval/datasets/frames --fps 12
+"""
+from __future__ import annotations
+
+import argparse
+import io
+import sys
+import time
+from pathlib import Path
+
+import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from server import protocol  # noqa: E402
+
+
+def _animated(base: bytes, phase: int) -> bytes:
+    """Draw a small moving dot so the feed visibly updates (proves it's live)."""
+    try:
+        from PIL import Image, ImageDraw
+        im = Image.open(io.BytesIO(base)).convert("RGB")
+        d = ImageDraw.Draw(im)
+        w, h = im.size
+        x = int((0.5 + 0.35 * __import__("math").sin(phase / 6.0)) * w)
+        d.ellipse([x - 14, h - 60, x + 14, h - 32], fill=(90, 227, 161))
+        out = io.BytesIO()
+        im.save(out, format="JPEG", quality=70)
+        return out.getvalue()
+    except Exception:
+        return base
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="MJPEG live-feed simulator")
+    ap.add_argument("--url", default="http://127.0.0.1:8777")
+    ap.add_argument("--token", default="CHANGE_ME_dev_token")
+    ap.add_argument("--image", help="single JPEG to stream (animated)")
+    ap.add_argument("--dir", help="folder of JPEG frames to loop")
+    ap.add_argument("--fps", type=int, default=12)
+    ap.add_argument("--seconds", type=float, default=0, help="0 = run until Ctrl-C")
+    args = ap.parse_args()
+
+    if args.dir:
+        files = sorted(Path(args.dir).glob("*.jpg"))
+        frames = [f.read_bytes() for f in files]
+        if not frames:
+            print("no .jpg frames in", args.dir); return 2
+    elif args.image:
+        frames = [Path(args.image).read_bytes()]
+    else:
+        print("give --image or --dir"); return 2
+
+    url = args.url.rstrip("/") + "/frame"
+    headers = {protocol.HDR_TOKEN: args.token, "Content-Type": "image/jpeg"}
+    period = 1.0 / max(1, args.fps)
+    t_end = time.monotonic() + args.seconds if args.seconds else None
+    print(f"[stream-sim] -> {url} @ {args.fps} fps ({'loop '+str(len(frames)) if args.dir else 'animated'}) Ctrl-C to stop")
+    i = 0
+    try:
+        while True:
+            data = frames[i % len(frames)] if args.dir else _animated(frames[0], i)
+            try:
+                requests.post(url, headers=headers, data=data, timeout=2)
+            except requests.RequestException as e:
+                print("  post failed:", e)
+            i += 1
+            if t_end and time.monotonic() > t_end:
+                break
+            time.sleep(period)
+    except KeyboardInterrupt:
+        pass
+    print(f"[stream-sim] sent {i} frames")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

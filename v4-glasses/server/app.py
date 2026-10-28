@@ -10,18 +10,27 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Callable, Optional
 
 from fastapi import FastAPI, Form, Header, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 from . import config, protocol, receiver
 from .logging_setup import get
 from .state import RequestRecord, StateStore
+from .stream import FrameBuffer, MJPEG_MEDIA_TYPE, mjpeg_generator
 from .ws import WSHub
+
+# voice command patterns (deterministic routing — no LLM decides commands)
+_PINOUT_ON_RE = re.compile(
+    r"\b(show|display|bring up|turn on|enable|overlay)\b.*\b(pin ?out|pins?)\b"
+    r"|\bpin ?out\b.*\b(on|up)\b", re.I)
+_PINOUT_OFF_RE = re.compile(
+    r"\b(hide|remove|close|turn off|disable|clear|take (down|off))\b.*\b(pin ?out|pins?)\b", re.I)
 
 log = get("app")
 
@@ -64,17 +73,28 @@ def create_app(store: Optional[StateStore] = None,
     store = store or StateStore()
     hub = hub or WSHub()
     pipeline = pipeline or stage1_stub_pipeline(hub, store)
+    frames = FrameBuffer()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         hub.start(asyncio.get_running_loop())
         config.ensure_dirs()
+        if config.VOICE_ALWAYS:
+            from . import voice
+            if voice.start_always_listening(_route_voice):
+                log.info("always-listening voice enabled")
+                hub.emit("voice_state", listening=True)
+            else:
+                log.info("always-listening requested but voice stack unavailable")
         log.info("glasses server up", extra={"status": "ready"})
         yield
+        from . import voice
+        voice.stop_always_listening()
 
     app = FastAPI(title="Glasses datasheet server", lifespan=lifespan)
     app.state.store = store
     app.state.hub = hub
+    app.state.frames = frames
 
     # serve vendored UI assets (three.min.js, etc.) locally so the demo is offline
     assets_dir = config.UI_WEB_DIR / "assets"
@@ -129,6 +149,7 @@ def create_app(store: Optional[StateStore] = None,
 
     def _on_valid(rec: RequestRecord, image_bytes: bytes, meta_raw: bytes) -> None:
         _store_capture(rec, image_bytes, meta_raw)
+        frames.put(image_bytes)   # show the latest capture on the live feed too
         hub.emit("state", request_id=rec.request_id, status="processing")
         pipeline(rec, image_bytes)
 
@@ -171,6 +192,28 @@ def create_app(store: Optional[StateStore] = None,
         if not target.exists():
             return JSONResponse(status_code=404, content={"error": "pdf not cached"})
         return FileResponse(target, media_type="application/pdf")
+
+    # ---- live camera feed (option B) ----
+    @app.post("/frame")
+    async def ingest_frame(request: Request):
+        if request.headers.get(protocol.HDR_TOKEN) != config.SHARED_TOKEN:
+            return JSONResponse(status_code=401, content={"error": protocol.E_UNAUTHORIZED})
+        data = await request.body()
+        if not data:
+            return JSONResponse(status_code=400, content={"error": "empty frame"})
+        if len(data) > protocol.MAX_JPEG_BYTES:
+            return JSONResponse(status_code=413, content={"error": protocol.E_TOO_LARGE})
+        frames.put(data)
+        return {"ok": True, "bytes": len(data)}
+
+    @app.get("/stream")
+    def stream():
+        return StreamingResponse(mjpeg_generator(frames), media_type=MJPEG_MEDIA_TYPE)
+
+    @app.get("/pins")
+    async def pins(part: str):
+        from . import datasheet_qa
+        return datasheet_qa.get_pins(part)
 
     @app.post("/speak")
     async def speak(request: Request):
@@ -218,6 +261,36 @@ def create_app(store: Optional[StateStore] = None,
         hub.emit("heard", request_id=rid, text=text)
         _answer_question(rid, text)
 
+    def _set_pinout(visible: bool) -> None:
+        """Toggle the pinout overlay for the latest accepted part (voice/UI)."""
+        if not visible:
+            hub.emit("pinout", visible=False)
+            return
+        from . import datasheet_qa
+        rec = store.latest_accepted()
+        if not rec:
+            hub.emit("pinout", visible=False, reason="no accepted part yet")
+            return
+        info = datasheet_qa.get_pins((rec.result or {}).get("part_number", ""))
+        hub.emit("pinout", visible=bool(info.get("pins")), request_id=rec.request_id,
+                 part=info.get("part"), page=info.get("page"), pins=info.get("pins", []),
+                 datasheet=(rec.result or {}).get("datasheet"))
+
+    def _route_voice(text: str) -> None:
+        """Route an always-listening transcript to a command or a datasheet question.
+
+        Deterministic command matching (no LLM decides actions); unmatched speech
+        is treated as a datasheet question about the latest accepted part."""
+        hub.emit("heard", text=text)
+        if _PINOUT_OFF_RE.search(text):
+            _set_pinout(False)
+        elif _PINOUT_ON_RE.search(text):
+            _set_pinout(True)
+        else:
+            rec = store.latest_accepted()
+            if rec:
+                _answer_question(rec.request_id, text)
+
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
         await websocket.accept()
@@ -237,6 +310,18 @@ def create_app(store: Optional[StateStore] = None,
                 elif cmd == "ask_voice":               # spoken datasheet question (Whisper)
                     threading.Thread(target=_voice_ask, args=(msg.get("request_id", ""),),
                                      daemon=True).start()
+                elif cmd == "pinout":                   # UI button toggle
+                    threading.Thread(target=_set_pinout, args=(bool(msg.get("visible")),),
+                                     daemon=True).start()
+                elif cmd == "voice_always":             # start/stop always-listening
+                    from . import voice
+                    if msg.get("on"):
+                        ok = voice.start_always_listening(_route_voice)
+                        hub.emit("voice_state", listening=ok,
+                                 reason=None if ok else "voice stack unavailable")
+                    else:
+                        voice.stop_always_listening()
+                        hub.emit("voice_state", listening=False)
                 elif cmd == "ping":
                     await websocket.send_json({"type": "pong"})
         except WebSocketDisconnect:

@@ -153,6 +153,33 @@ def parse_pin_table(text: str) -> dict[str, dict]:
     return res
 
 
+def get_pins(part_number: str) -> dict:
+    """Structured pin map for the live-feed overlay: {part, page, pins:[{name,no,desc}]}.
+
+    Parses the datasheet's Pin Functions section (first/primary package number).
+    Returns an empty list if the part has no cached datasheet or pin table."""
+    idx = _index(part_number)
+    if idx is None:
+        return {"part": part_number, "page": None, "pins": []}
+    table: dict[str, dict] = {}
+    page = None
+    for s in list(getattr(idx, "pin_functions", [])):
+        parsed = parse_pin_table(s.text)
+        if parsed:
+            table.update(parsed)
+            page = page or s.page
+    pins = [{"name": n, "no": v["numbers"][0], "desc": v["desc"]}
+            for n, v in table.items() if v["numbers"]]
+    pins.sort(key=lambda p: p["no"])
+    return {"part": part_number, "page": page, "pins": pins}
+
+
+def _index(part_number: str):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from catalog.page_index import index_for_part
+    return index_for_part(part_number)
+
+
 def _pin_answer(idx, part_number: str, question: str) -> dict | None:
     secs = list(getattr(idx, "pin_functions", []))
     if not secs:
