@@ -1,7 +1,11 @@
 # PLAN — `v4-glasses/`
 ## Smart Glasses for Hands-Free Datasheet Retrieval (ECE 445, Team 6, Fall 2026)
 
-> **STATUS: PLAN ONLY. No implementation code written yet. Awaiting your approval.**
+> **STATUS: IMPLEMENTED (all 6 stages built and committed).** This file is kept as
+> the original design record. A few files were added beyond the initial tree during
+> implementation: `server/pipeline.py`, `server/readout.py`, `Makefile`,
+> `docs/runbook.md`, `tests/test_eval.py`, `tests/test_preprocess.py`, and
+> `eval/dataset.example.yaml`. The open TODOs in §7 still stand.
 
 This folder is a new, self-contained version that repurposes the JarvisV3 local-first
 assistant stack into the ECE 445 glasses system. **Nothing outside `v4-glasses/` is

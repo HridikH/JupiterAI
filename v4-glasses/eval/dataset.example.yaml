@@ -1,0 +1,11 @@
+# Example dataset format for eval/calibrate.py and eval/blinded_trial.py.
+# Copy to eval/datasets/calibration.yaml and eval/datasets/trials.yaml (gitignored)
+# and point `image` at your captured JPEGs. The two sets MUST be disjoint.
+#
+# V2 trial set target: >=20 distinct `truth` part numbers, >=5 trials each (>=100).
+trials:
+  - {image: datasets/trial/ne555p_01.jpg,  truth: NE555P}
+  - {image: datasets/trial/ne555p_02.jpg,  truth: NE555P}
+  - {image: datasets/trial/lm358p_01.jpg,  truth: LM358P}
+  - {image: datasets/trial/cd4011be_01.jpg, truth: CD4011BE}
+  # ... add the rest (>=20 parts x >=5 trials)

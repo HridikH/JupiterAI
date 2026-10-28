@@ -54,16 +54,25 @@ class Pipeline:
             self._thresholds = th_mod.load(require_frozen=self._require_frozen)
         return self._thresholds
 
+    def identify(self, image_bytes: bytes, store_crop_for: str | None = None):
+        """Run preprocess -> OCR -> resolve and return the resolver Decision.
+
+        Pure identification (no state mutation / WS), so eval harnesses can reuse
+        the exact runtime path in-process. Deterministic and LLM-free."""
+        th = self.thresholds()
+        crop, variants, quality = preprocess.preprocess(image_bytes)
+        if store_crop_for:
+            self._maybe_store_crop(store_crop_for, crop)
+        engine = self.engine()
+        ocr_results = [engine.recognize(arr, variant=name) for name, arr in variants]
+        return resolver.resolve(self.catalog(), ocr_results, th, quality,
+                                (crop.width, crop.height))
+
     def run_sync(self, rec: RequestRecord, image_bytes: bytes) -> None:
         rid = rec.request_id
         th = self.thresholds()
         try:
-            crop, variants, quality = preprocess.preprocess(image_bytes)
-            self._maybe_store_crop(rid, crop)
-            engine = self.engine()
-            ocr_results = [engine.recognize(arr, variant=name) for name, arr in variants]
-            decision = resolver.resolve(self.catalog(), ocr_results, th, quality,
-                                        (crop.width, crop.height))
+            decision = self.identify(image_bytes, store_crop_for=rid)
             self.store.set_result(rid, decision.status, decision.result,
                                   config_version=th.version, config_hash=th.config_hash)
             log.info("resolved", extra={"request_id": rid, "status": decision.status,
