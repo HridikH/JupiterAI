@@ -164,8 +164,12 @@ def create_app(store: Optional[StateStore] = None,
 def main() -> None:
     import uvicorn
     from .logging_setup import setup
+    from .pipeline import Pipeline
     setup()
-    app = create_app()
+    store = StateStore()
+    hub = WSHub()
+    pipe = Pipeline(store, hub).as_fn(threaded=True)
+    app = create_app(store=store, hub=hub, pipeline=pipe)
     log.info(f"serving on {config.HOST}:{config.PORT}", extra={"status": "listen"})
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning", ws="wsproto")
 
