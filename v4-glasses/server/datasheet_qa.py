@@ -15,6 +15,7 @@ text only*, still with the citation and the same "unavailable" fallback.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,86 @@ from . import config
 from .logging_setup import get
 
 log = get("datasheet_qa")
+
+# A number followed by an electrical unit — ratings answers almost always carry one.
+_UNIT_RE = re.compile(
+    r"\d+(?:\.\d+)?\s?(?:v|mv|kv|a|ma|ua|µa|°c|c|w|mw|kw|hz|khz|mhz|ns|us|µs|ms|ohm|Ω|%)\b",
+    re.I)
+# Words that signal a datasheet *ratings* question -> search the ratings sections first.
+_RATINGS_RE = re.compile(
+    r"\b(voltage|current|temperature|power|rating|ratings|supply|vcc|vdd|operating|"
+    r"absolute|maximum|minimum|max|min|dissipation|frequency|threshold|range)\b", re.I)
+
+
+def _terms(question: str) -> list[str]:
+    return [t for t in re.split(r"\W+", question.lower()) if len(t) > 2]
+
+
+_HEADER_RE = re.compile(r"\bmin\b.*\bmax\b|\bmax\b.*\bmin\b|unless otherwise noted", re.I)
+
+
+def _score_anchor(line: str, window: str, terms: list[str]) -> int:
+    """Score an anchor line by query-term overlap, with the numeric-value bonus
+    taken over the whole WINDOW (the value often sits a line or two below the
+    label in an extracted table), and a penalty for boilerplate table headers."""
+    low = line.lower()
+    present = sum(1 for t in set(terms) if t in low)
+    if present == 0:
+        return 0
+    score = present * 2
+    if _UNIT_RE.search(window):
+        score += 3                      # a real value with a unit — what we want
+    elif any(ch.isdigit() for ch in window):
+        score += 1
+    if _HEADER_RE.search(low):
+        score -= 2                      # "MIN MAX", "unless otherwise noted" — not an answer
+    return score
+
+
+def _clean(s: str, width: int = 220) -> str:
+    return " ".join(s.split())[:width]
+
+
+def rank_snippets(pages, sections, question: str, k: int = 3) -> list[dict]:
+    """Rank line-level snippets. Ratings questions look in the abs-max /
+    recommended-operating sections FIRST (so a value table beats prose). Returns
+    [{'page','text','section'}], best first. Pure + deterministic (no LLM).
+
+    `pages`    : iterable of (page_number, page_text)
+    `sections` : iterable of objects with .page and .text (abs-max + recommended-op)
+    """
+    terms = _terms(question)
+    if not terms:
+        return []
+    ratings = bool(_RATINGS_RE.search(question))
+    cands: list[tuple[int, int, str, str | None]] = []
+
+    def scan(text, page, section, bonus=0):
+        lines = [l for l in text.splitlines() if l.strip()]
+        for i, l in enumerate(lines):
+            window = _clean(" ".join(lines[i:i + 3]))  # value may be a line or two below
+            sc = _score_anchor(l, window, terms)
+            if sc > 0:
+                cands.append((sc + bonus, page, window, section))
+
+    if ratings:
+        for sec in sections:
+            scan(sec.text, sec.page, sec.name, bonus=3)
+    for num, text in pages:
+        scan(text, num, None, bonus=0)
+
+    cands.sort(key=lambda x: x[0], reverse=True)
+    out, seen = [], set()
+    for _, page, text, section in cands:
+        key = (page, text[:40])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"page": page, "text": text, "section": section})
+        if len(out) >= k:
+            break
+    return out
+
 
 _GROUNDED_SYSTEM = (
     "You answer ONLY from the datasheet excerpt provided. If the excerpt does not "
@@ -38,7 +119,10 @@ def _search(part_number: str, question: str):
     idx = index_for_part(part_number)
     if idx is None:
         return None, []
-    return idx, idx.search(question, k=3)
+    pages = [(p.number, p.text) for p in idx.pages]
+    sections = list(idx.absolute_maximum_ratings) + list(idx.recommended_operating_conditions)
+    hits = rank_snippets(pages, sections, question, k=3)
+    return idx, hits
 
 
 def _qwen_answer(question: str, page_text: str) -> str | None:
@@ -72,11 +156,17 @@ def answer(part_number: str, question: str) -> dict[str, Any]:
         return {"available": False, "part_number": part_number,
                 "reason": "no matching datasheet page"}
 
-    page_no, snippet = hits[0]
-    citation = {"part_number": part_number, "page": page_no}
+    top = hits[0]
+    page_no, snippet, section = top["page"], top["text"], top.get("section")
+    citation = {"part_number": part_number, "page": page_no, "section": section}
 
     if config.DATASHEET_QA_ENABLED:
-        page_text = next((p.text for p in idx.pages if p.number == page_no), snippet)
+        # Ground Qwen on the matched section (if any) else the page, for cleaner phrasing.
+        if section:
+            secs = list(idx.absolute_maximum_ratings) + list(idx.recommended_operating_conditions)
+            page_text = next((s.text for s in secs if s.page == page_no and s.name == section), snippet)
+        else:
+            page_text = next((p.text for p in idx.pages if p.number == page_no), snippet)
         llm = _qwen_answer(question, page_text)
         if llm is not None:
             return {"available": True, "answer": llm, "citation": citation,
