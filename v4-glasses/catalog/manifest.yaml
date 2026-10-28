@@ -1,0 +1,58 @@
+# Datasheet manifest — one entry per EXACT orderable number (D1).
+#
+# Multiple orderable numbers may point to the SAME family PDF (same cache_path),
+# but each number STILL gets its own entry. The validator fails if any part in
+# parts.yaml has no manifest entry, or if a recorded sha256 doesn't match the
+# cached file.
+#
+# Runtime NEVER touches the network (D2): PDFs are fetched ONCE by
+# catalog/fetch.py while online, which records the sha256 and leaves `reviewed`
+# as false until a human verifies the PDF is the right revision and sets it true.
+#
+# Fields per entry:
+#   orderable_number   matches a parts.yaml part_number   [required]
+#   manufacturer                                          [required]
+#   package                                               [required]
+#   url                official manufacturer PDF URL      [required]
+#   retrieval_date     ISO date the PDF was fetched       [required]
+#   sha256             hex sha256 of the cached PDF        [required]
+#   cache_path         path under catalog/cache/           [required]
+#   reviewed           human verified correct PDF/rev      [required]
+#   cite_page          default page to open (1-indexed)    [optional, default 1]
+#   family             optional grouping label             [optional]
+#
+# The sha256 values below are PLACEHOLDERS (64 zeros) and reviewed:false — run
+# `python -m catalog.fetch` to populate real hashes, then review and flip the flag.
+entries:
+  - orderable_number: NE555P
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    url: https://www.ti.com/lit/ds/symlink/ne555.pdf
+    retrieval_date: "2026-01-01"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    cache_path: catalog/cache/ne555.pdf
+    reviewed: false
+    cite_page: 1
+    family: ne555
+
+  - orderable_number: LM358P
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    url: https://www.ti.com/lit/ds/symlink/lm358.pdf
+    retrieval_date: "2026-01-01"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    cache_path: catalog/cache/lm358.pdf
+    reviewed: false
+    cite_page: 1
+    family: lm358
+
+  - orderable_number: CD4011BE
+    manufacturer: Texas Instruments
+    package: PDIP-14
+    url: https://www.ti.com/lit/ds/symlink/cd4011b.pdf
+    retrieval_date: "2026-01-01"
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    cache_path: catalog/cache/cd4011b.pdf
+    reviewed: false
+    cite_page: 1
+    family: cd4011b

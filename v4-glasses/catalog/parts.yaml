@@ -1,0 +1,37 @@
+# Part catalog — one entry per EXACT orderable part number.
+#
+# IMPORTANT: top markings on a package frequently differ from the orderable
+# number (especially on small packages), so list every string actually seen on
+# the part under `top_markings`. The resolver scores OCR reads against these.
+#
+# This file ships 3 ILLUSTRATIVE entries so the pipeline + validator are runnable.
+# Replace/extend with your real >=20-part catalog (see docs/runbook.md).
+#
+# Fields:
+#   part_number        exact orderable number (unique key)         [required]
+#   manufacturer                                                   [required]
+#   package                                                        [required]
+#   top_markings       strings printed on the part (>=1)           [required]
+#   aliases            other names people/search use               [optional]
+#   min_char_height_mm smallest character height on the part (mm)  [optional]
+parts:
+  - part_number: NE555P
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    top_markings: ["NE555P", "NE555", "555"]
+    aliases: ["555 timer"]
+    min_char_height_mm: 0.9
+
+  - part_number: LM358P
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    top_markings: ["LM358P", "LM358"]
+    aliases: ["dual op-amp"]
+    min_char_height_mm: 0.9
+
+  - part_number: CD4011BE
+    manufacturer: Texas Instruments
+    package: PDIP-14
+    top_markings: ["CD4011BE", "CD4011B"]
+    aliases: ["quad NAND"]
+    min_char_height_mm: 0.8
