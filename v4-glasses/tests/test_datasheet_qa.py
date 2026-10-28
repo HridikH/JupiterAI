@@ -49,6 +49,46 @@ def test_no_match_returns_empty():
     assert q.rank_snippets(PAGES, [], "quantum chromodynamics lagrangian") == []
 
 
+# ---- pinout questions ----
+PIN_TABLE_TEXT = (
+    "Pin Functions\nPIN\nTYPE\nDESCRIPTION\nNAME\nNO.\n"
+    "P (PDIP),\nFK (LCCC)\n"
+    "GND\n1\n2\n—\nGround\n"
+    "TRIG\n2\n5\nInput\nStart of timing input\n"
+    "OUT\n3\n7\nOutput\nHigh current timer output\n"
+    "VCC\n8\n20\n—\nInput supply voltage, 4.5V to 16V.\nwww.ti.com footer junk\n"
+)
+
+
+def test_parse_pin_table():
+    t = q.parse_pin_table(PIN_TABLE_TEXT)
+    assert t["GND"]["numbers"][0] == 1
+    assert t["TRIG"]["numbers"][0] == 2
+    assert t["OUT"]["numbers"][0] == 3
+    assert t["VCC"]["numbers"][0] == 8
+    assert "www." not in t["VCC"]["desc"]      # footer trimmed
+
+
+@dataclass
+class PinIdx:
+    pin_functions: list
+
+
+def test_pin_answer_maps_ground_to_number():
+    from catalog.page_index import Section
+    idx = PinIdx(pin_functions=[Section("pin_functions", 3, PIN_TABLE_TEXT)])
+    r = q._pin_answer(idx, "NE555P", "which pin do i connect to ground")
+    assert r and r["source"] == "pin_table"
+    assert "pin 1" in r["answer"] and r["citation"]["page"] == 3
+
+
+def test_pin_answer_lists_all_for_generic():
+    from catalog.page_index import Section
+    idx = PinIdx(pin_functions=[Section("pin_functions", 3, PIN_TABLE_TEXT)])
+    r = q._pin_answer(idx, "NE555P", "what are the pins")
+    assert "GND = pin 1" in r["answer"] and "VCC = pin 8" in r["answer"]
+
+
 def test_header_line_penalized():
     # a line that is only a table header should score below a real value line
     assert q._score_anchor("unless otherwise noted MIN MAX", "unless otherwise noted MIN MAX",

@@ -18,6 +18,9 @@ from typing import Optional
 
 ABS_MAX_RE = re.compile(r"absolute\s+maximum\s+ratings", re.I)
 REC_OP_RE = re.compile(r"recommended\s+operating\s+conditions", re.I)
+# The pin table header ("Pin Functions"), distinct from the TOC's
+# "Pin Configuration and Functions" line.
+PIN_FUNC_RE = re.compile(r"\bPin\s+Functions\b")
 # a heading that ends the captured section
 NEXT_HEADING_RE = re.compile(
     r"^\s*\d*\.?\s*(electrical characteristics|thermal information|dissipation|"
@@ -44,6 +47,7 @@ class DatasheetIndex:
     pages: list[Page] = field(default_factory=list)
     absolute_maximum_ratings: list[Section] = field(default_factory=list)
     recommended_operating_conditions: list[Section] = field(default_factory=list)
+    pin_functions: list[Section] = field(default_factory=list)
 
     def search(self, query: str, k: int = 3) -> list[tuple[int, str]]:
         """Keyword-overlap page search. Returns [(page_number, snippet), ...].
@@ -94,6 +98,9 @@ def build_index(pdf_path: Path | str) -> DatasheetIndex:
             for m in REC_OP_RE.finditer(text):
                 idx.recommended_operating_conditions.append(
                     Section("recommended_operating_conditions", i, _capture_section(text, m.start())))
+            for m in PIN_FUNC_RE.finditer(text):
+                idx.pin_functions.append(
+                    Section("pin_functions", i, _capture_section(text, m.start())))
     return idx
 
 

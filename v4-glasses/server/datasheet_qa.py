@@ -105,6 +105,84 @@ def rank_snippets(pages, sections, question: str, k: int = 3) -> list[dict]:
     return out
 
 
+# ---- pinout questions ------------------------------------------------------
+_PIN_Q_RE = re.compile(r"\b(pin|pins|pinout|pin-?out|connect|wire|hook\s*up|terminal)\b", re.I)
+_PIN_NAMES = {"GND", "VCC", "VDD", "OUT", "TRIG", "RESET", "THRES", "DISCH", "CONT", "NC", "CV"}
+# ordered signal -> question keywords (first match wins)
+_SIGNAL_ALIASES = [
+    ("GND", ["ground", "gnd", "vss", "0v", "negative"]),
+    ("VCC", ["vcc", "vdd", "supply", "power", "v+", "positive"]),
+    ("TRIG", ["trigger", "trig"]),
+    ("RESET", ["reset"]),
+    ("THRES", ["threshold", "thres"]),
+    ("DISCH", ["discharge", "disch"]),
+    ("CONT", ["control voltage", "control", "cont", "cv"]),
+    ("OUT", ["output", "out"]),
+]
+
+
+def parse_pin_table(text: str) -> dict[str, dict]:
+    """Parse a 'Pin Functions' section into {NAME: {numbers:[...], desc:str}}.
+
+    Handles the typical TI layout where NAME, pin NO.(s), TYPE, and DESCRIPTION
+    extract as separate lines. The first number is the primary (DIP/SOIC) pin."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    res: dict[str, dict] = {}
+    i = 0
+    while i < len(lines):
+        nm = re.sub(r"[^A-Z]", "", lines[i].upper())
+        if nm in _PIN_NAMES and lines[i].strip().upper() == nm:
+            j, nums = i + 1, []
+            while j < len(lines) and re.fullmatch(r"[\d,\s]+", lines[j]):
+                nums += [int(x) for x in re.findall(r"\d+", lines[j])]
+                j += 1
+            desc = []
+            while j < len(lines):
+                cand = re.sub(r"[^A-Z]", "", lines[j].upper())
+                if (cand in _PIN_NAMES and lines[j].strip().upper() == cand) \
+                        or re.fullmatch(r"[\d,\s]+", lines[j]):
+                    break
+                desc.append(lines[j])
+                j += 1
+            d = " ".join(desc).strip(" —").strip()
+            d = re.split(r"\s+www\.|\s+SLFS|\s+Copyright|\s+Submit Document", d)[0]  # drop footer
+            res[nm] = {"numbers": nums, "desc": d[:90].strip()}
+            i = j
+        else:
+            i += 1
+    return res
+
+
+def _pin_answer(idx, part_number: str, question: str) -> dict | None:
+    secs = list(getattr(idx, "pin_functions", []))
+    if not secs:
+        return None
+    table: dict[str, dict] = {}
+    page = None
+    for s in secs:
+        parsed = parse_pin_table(s.text)
+        if parsed:
+            table.update(parsed)
+            page = page or s.page
+    if not table:
+        return None
+    ql = question.lower()
+    for sig, keys in _SIGNAL_ALIASES:
+        if sig in table and table[sig]["numbers"] and any(k in ql for k in keys):
+            num = table[sig]["numbers"][0]
+            desc = table[sig]["desc"]
+            ans = f"{sig} ({desc}) is pin {num}." if desc else f"{sig} is pin {num}."
+            return {"available": True, "answer": ans, "source": "pin_table",
+                    "citation": {"part_number": part_number, "page": page, "section": "pin_functions"}}
+    # generic "what are the pins" -> list them
+    listing = ", ".join(f"{n} = pin {v['numbers'][0]}" for n, v in table.items() if v["numbers"])
+    if listing:
+        return {"available": True, "answer": f"Pin map (primary package): {listing}.",
+                "source": "pin_table",
+                "citation": {"part_number": part_number, "page": page, "section": "pin_functions"}}
+    return None
+
+
 _GROUNDED_SYSTEM = (
     "You answer ONLY from the datasheet excerpt provided. If the excerpt does not "
     "contain the answer, reply exactly 'UNAVAILABLE'. Never state or guess a part "
@@ -152,6 +230,13 @@ def _qwen_answer(question: str, page_text: str) -> str | None:
 def answer(part_number: str, question: str) -> dict[str, Any]:
     """Return a grounded, cited answer or an explicit unavailable result."""
     idx, hits = _search(part_number, question)
+
+    # Pinout questions -> deterministic pin-table lookup (e.g. "which pin is ground").
+    if idx is not None and _PIN_Q_RE.search(question):
+        pin = _pin_answer(idx, part_number, question)
+        if pin:
+            return pin
+
     if not hits:
         return {"available": False, "part_number": part_number,
                 "reason": "no matching datasheet page"}
