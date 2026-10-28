@@ -1,0 +1,34 @@
+# Glasses server — pinned deps. Apple Silicon / macOS target, Python 3.11.
+# Stage 1 (receiver/protocol/simulator) needs only the top block; later stages
+# add OCR / PDF / optional MLX. Install into v4-glasses/.venv — never system-wide.
+
+# ---- core server + protocol (stage 1) ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+wsproto==1.2.0            # forced WS backend — matches parent repo's fix
+python-multipart==0.0.20  # multipart/form-data parsing for /capture
+pillow==11.1.0           # JPEG decode/verify (V1 step 8) + dims
+requests==2.32.3         # fake-device + fuzzer client
+pyyaml==6.0.2            # catalog loading (stage 3)
+jsonschema==4.23.0       # catalog schema validation (stage 3)
+
+# ---- OCR (stage 2) ----
+# Apple Vision backend uses pyobjc (macOS only). Fallback backends are heavy;
+# install only the one you use.
+pyobjc-framework-Vision==11.0 ; sys_platform == "darwin"
+pyobjc-framework-Quartz==11.0 ; sys_platform == "darwin"
+# easyocr==1.7.2         # uncomment for the cross-platform fallback (pulls torch)
+# paddleocr==2.9.1       # alternative fallback
+
+# ---- datasheets (stage 3) ----
+pymupdf==1.25.1          # per-page text extraction + open PDF at page
+
+# ---- tests ----
+pytest==8.3.4
+httpx==0.28.1            # FastAPI TestClient dependency
+
+# ---- optional datasheet Q&A / TTS readout ----
+# Reuse the parent repo's MLX stack only if GLASSES_DATASHEET_QA / TTS_READOUT
+# are enabled. Not required for identification.
+# mlx-lm>=0.21
+# mlx-audio>=0.1
