@@ -29,3 +29,63 @@ entries:
   reviewed: false
   cite_page: 1
   family: cd4011b
+- orderable_number: LM741CN
+  manufacturer: Texas Instruments
+  package: PDIP-8
+  url: https://www.ti.com/lit/ds/symlink/lm741.pdf
+  retrieval_date: '2026-01-01'
+  sha256: 6f3bf3cbce352c73a8f3e7506023ab1f5d12549834840e0227d6bb37de6c48db
+  cache_path: catalog/cache/lm741.pdf
+  reviewed: false
+  cite_page: 1
+  family: lm741
+- orderable_number: TL072CP
+  manufacturer: Texas Instruments
+  package: PDIP-8
+  url: https://www.ti.com/lit/ds/symlink/tl072.pdf
+  retrieval_date: '2026-01-01'
+  sha256: 30a70a806642920df994222bc8e7d9b16b4e4cdbf228996dd21ee4bb2cdc863f
+  cache_path: catalog/cache/tl072.pdf
+  reviewed: false
+  cite_page: 1
+  family: tl072
+- orderable_number: LM393P
+  manufacturer: Texas Instruments
+  package: PDIP-8
+  url: https://www.ti.com/lit/ds/symlink/lm393.pdf
+  retrieval_date: '2026-01-01'
+  sha256: b8503035c014ad5c6ab40f2230509a407deed99a6b998997e7535f8b0bce986b
+  cache_path: catalog/cache/lm393.pdf
+  reviewed: false
+  cite_page: 1
+  family: lm393
+- orderable_number: LM324N
+  manufacturer: Texas Instruments
+  package: PDIP-14
+  url: https://www.ti.com/lit/ds/symlink/lm324.pdf
+  retrieval_date: '2026-01-01'
+  sha256: 8161ad748420ae0594ad1919a34b34acd4858b822c04a8066b5fc95ddbda8963
+  cache_path: catalog/cache/lm324.pdf
+  reviewed: false
+  cite_page: 1
+  family: lm324
+- orderable_number: SN74HC595N
+  manufacturer: Texas Instruments
+  package: PDIP-16
+  url: https://www.ti.com/lit/ds/symlink/sn74hc595.pdf
+  retrieval_date: '2026-01-01'
+  sha256: 5a6a5aeecc79a2d4bf4e15aae681e0f99cb13b54d6524be253a6844c898eeb0d
+  cache_path: catalog/cache/sn74hc595.pdf
+  reviewed: false
+  cite_page: 1
+  family: sn74hc595
+- orderable_number: LM317T
+  manufacturer: Texas Instruments
+  package: TO-220
+  url: https://www.ti.com/lit/ds/symlink/lm317.pdf
+  retrieval_date: '2026-01-01'
+  sha256: 1646fb2e4f8cf8c2cbd93aaf22edad368571619ad062476deca8ee29f95c65d3
+  cache_path: catalog/cache/lm317.pdf
+  reviewed: false
+  cite_page: 1
+  family: lm317

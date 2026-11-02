@@ -35,3 +35,46 @@ parts:
     top_markings: ["CD4011BE", "CD4011B"]
     aliases: ["quad NAND"]
     min_char_height_mm: 0.8
+
+  # ---- common jellybean parts ----
+  - part_number: LM741CN
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    top_markings: ["LM741CN", "LM741"]
+    aliases: ["op-amp", "741"]
+    min_char_height_mm: 0.9
+
+  - part_number: TL072CP
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    top_markings: ["TL072CP", "TL072"]
+    aliases: ["JFET op-amp"]
+    min_char_height_mm: 0.9
+
+  - part_number: LM393P
+    manufacturer: Texas Instruments
+    package: PDIP-8
+    top_markings: ["LM393P", "LM393"]
+    aliases: ["dual comparator"]
+    min_char_height_mm: 0.9
+
+  - part_number: LM324N
+    manufacturer: Texas Instruments
+    package: PDIP-14
+    top_markings: ["LM324N", "LM324"]
+    aliases: ["quad op-amp"]
+    min_char_height_mm: 0.8
+
+  - part_number: SN74HC595N
+    manufacturer: Texas Instruments
+    package: PDIP-16
+    top_markings: ["SN74HC595N", "74HC595", "HC595"]
+    aliases: ["shift register"]
+    min_char_height_mm: 0.8
+
+  - part_number: LM317T
+    manufacturer: Texas Instruments
+    package: TO-220
+    top_markings: ["LM317T", "LM317"]
+    aliases: ["adjustable regulator"]
+    min_char_height_mm: 1.2
