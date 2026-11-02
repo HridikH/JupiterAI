@@ -28,6 +28,10 @@ server:
 doctor:
 	$(PY) -m tools.doctor
 
+## self-signed cert so a phone can use its camera over HTTPS (/mobile on :8443)
+cert:
+	$(PY) -m tools.make_cert
+
 validate:
 	$(PY) -m catalog.validate
 validate-strict:

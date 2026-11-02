@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Glasses · Phone Camera</title>
+<style>
+  :root{--bg:#0b0d12;--fg:#e6edf3;--dim:#90a0b4;--accent:#4493f8;--ok:#2ea043;
+        --warn:#d29922;--err:#f85149;--cand:#a371f7;--line:#2a3340}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+       min-height:100dvh;display:flex;flex-direction:column}
+  header{padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+  header b{color:#ffab4d}
+  .wrap{flex:1;display:flex;flex-direction:column;padding:14px;gap:12px}
+  #view{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:16px;overflow:hidden;border:1px solid var(--line)}
+  video{width:100%;height:100%;object-fit:cover}
+  #reticle{position:absolute;inset:18% 14%;border:2px dashed rgba(255,255,255,.5);border-radius:14px;pointer-events:none}
+  .row{display:flex;gap:10px;align-items:center}
+  button{flex:1;background:var(--accent);color:#fff;border:0;border-radius:12px;padding:16px;font-size:17px;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg);flex:0 0 auto;padding:16px 18px}
+  button.on{background:var(--ok)}
+  button:disabled{opacity:.5}
+  input{width:100%;background:#0e131a;border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:12px;font-size:15px}
+  .status{min-height:92px;border:1px solid var(--line);border-radius:12px;padding:14px;background:#0e131a}
+  .status .big{font-size:22px;font-weight:700}
+  .status.accepted{border-color:var(--ok)} .status.accepted .big{color:var(--ok)}
+  .status.recapture{border-color:var(--warn)} .status.recapture .big{color:var(--warn)}
+  .status.candidate_selection{border-color:var(--cand)} .status.candidate_selection .big{color:var(--cand)}
+  .status.error{border-color:var(--err)} .status.error .big{color:var(--err)}
+  .dim{color:var(--dim);font-size:13px}
+  details{font-size:13px;color:var(--dim)}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header><b>Glasses</b> · phone camera <span class="dim" id="conn" style="margin-left:auto"></span></header>
+<div class="wrap">
+  <div id="view">
+    <video id="v" playsinline autoplay muted></video>
+    <div id="reticle"></div>
+  </div>
+
+  <div class="row">
+    <button id="snap">📷 Capture part</button>
+    <button id="live" class="ghost">● Live</button>
+  </div>
+
+  <div class="status" id="status">
+    <div class="big">Point at a component</div>
+    <div class="dim">Center the marking in the box, hold steady, then Capture. Results show on this phone and on the laptop screen.</div>
+  </div>
+
+  <details>
+    <summary>Settings</summary>
+    <p class="dim">Shared token (must match the server's <code>GLASSES_TOKEN</code>):</p>
+    <input id="token" placeholder="GLASSES_TOKEN" autocomplete="off">
+  </details>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const api = location.origin;              // same HTTPS origin that served this page
+let stream=null, liveTimer=null;
+
+// token: ?token= overrides, else localStorage
+const qp = new URLSearchParams(location.search);
+$("token").value = qp.get("token") || localStorage.getItem("glasses_token") || "";
+$("token").onchange = () => localStorage.setItem("glasses_token", $("token").value.trim());
+const token = () => $("token").value.trim();
+
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ ideal:"environment" }, width:{ideal:1920}, height:{ideal:1440} },
+      audio:false });
+    $("v").srcObject = stream;
+    $("conn").textContent = "camera on";
+  }catch(e){
+    $("conn").textContent = "camera blocked";
+    setStatus("error", "Camera unavailable", "Allow camera access, and make sure you opened this page over HTTPS (https://… :8443). "+e);
+  }
+}
+
+function frameBlob(quality=0.9){
+  const v=$("v"); const w=v.videoWidth||1280, h=v.videoHeight||960;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").drawImage(v,0,0,w,h);
+  return new Promise(res=>c.toBlob(b=>res({blob:b,w,h}),"image/jpeg",quality));
+}
+async function sha256hex(buf){
+  const d=await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function rid(){ const a=new Uint8Array(8); crypto.getRandomValues(a);
+  return "ph"+[...a].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+
+async function battery_mv(){
+  try{ const b=await navigator.getBattery(); return Math.round(3300+ b.level*900); }catch{ return 3900; }
+}
+
+function setStatus(cls, big, sub){
+  const s=$("status"); s.className="status "+(cls||"");
+  s.innerHTML=`<div class="big">${big}</div><div class="dim">${sub||""}</div>`;
+}
+
+$("snap").onclick = async () => {
+  if(!token()){ setStatus("error","Set the token","Open Settings and enter the shared token."); return; }
+  $("snap").disabled=true; setStatus("", "Capturing…", "");
+  try{
+    const {blob,w,h} = await frameBlob(0.92);
+    const buf = await blob.arrayBuffer();
+    const id = rid();
+    const meta = { request_id:id, proto:"glasses-proto/1", width:w, height:h,
+                   byte_count:buf.byteLength, sha256:await sha256hex(buf),
+                   battery_mv:await battery_mv(), firmware:"phone/1" };
+    const fd = new FormData();
+    fd.append("meta", JSON.stringify(meta));
+    fd.append("image", new Blob([buf],{type:"image/jpeg"}), "capture.jpg");
+    const r = await fetch(api+"/capture",{ method:"POST",
+      headers:{ "X-Glasses-Token":token(), "X-Request-Id":id }, body:fd });
+    const j = await r.json();
+    if(!j.ok){ setStatus("error", j.error||"rejected", j.detail||""); $("snap").disabled=false; return; }
+    setStatus("", "Processing…", "Identifying the part.");
+    pollResult(id);
+  }catch(e){ setStatus("error","Capture failed", ""+e); $("snap").disabled=false; }
+};
+
+async function pollResult(id){
+  for(let i=0;i<60;i++){
+    try{
+      const r=await fetch(api+"/result/"+id); if(r.ok){
+        const rec=await r.json(); const s=rec.status, res=rec.result||{};
+        if(s==="accepted"){ setStatus("accepted", res.part_number,
+            `${res.manufacturer||""} · ${res.package||""} — see the laptop for the datasheet.`); break; }
+        if(s==="candidate_selection"){ setStatus("candidate_selection",
+            `${(res.candidates||[]).length} possible`, "Choose the right one on the laptop screen."); break; }
+        if(s==="recapture"){ setStatus("recapture", "Recapture", res.message||""); break; }
+        if(s==="error"){ setStatus("error","Error", res.message||""); break; }
+      }
+    }catch{}
+    await new Promise(r=>setTimeout(r,350));
+  }
+  $("snap").disabled=false;
+}
+
+// live stream to the laptop overlay (/frame)
+$("live").onclick = () => {
+  if(liveTimer){ clearInterval(liveTimer); liveTimer=null; $("live").classList.remove("on"); $("live").textContent="● Live"; return; }
+  if(!token()){ setStatus("error","Set the token",""); return; }
+  $("live").classList.add("on"); $("live").textContent="● Live (on)";
+  liveTimer = setInterval(async ()=>{
+    try{ const {blob}=await frameBlob(0.6);
+      await fetch(api+"/frame",{method:"POST",headers:{"X-Glasses-Token":token()},body:blob});
+    }catch{}
+  }, 450);
+};
+
+startCamera();
+</script>
+</body>
+</html>

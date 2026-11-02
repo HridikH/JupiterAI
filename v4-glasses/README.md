@@ -89,6 +89,25 @@ no LLM); unmatched speech becomes a datasheet question about the last accepted p
 > (installs EasyOCR) / `mock` (tests). There is **no npm** — the UI is plain HTML
 > served by FastAPI.
 
+### Use your phone as the camera (no ESP32 needed)
+The phone feeds the real pipeline over HTTPS (mobile browsers require a secure
+context for the camera *and* the SHA-256 the protocol needs). One-time setup:
+
+```bash
+make cert            # self-signed cert incl. your LAN IP -> data/cert.pem + key.pem
+make server          # now listens http://127.0.0.1:8777 (desktop) + https://<lan-ip>:8443 (phone)
+```
+
+On the phone (same Wi-Fi): open **`https://<lan-ip>:8443/mobile`** (the `make cert`
+output prints the exact URL), accept the one-time self-signed warning, enter the
+shared token in Settings, then:
+- **📷 Capture part** — snaps a photo straight into `/capture`; the result appears on
+  the phone *and* on the laptop console (shared state). This is the primary path.
+- **● Live** — streams frames to the laptop's live feed + pinout overlay.
+
+The laptop desktop console stays on plain `http://127.0.0.1:8777`. The ESP32 path is
+unchanged. Identification is identical regardless of camera source.
+
 ### Configuration (no secrets in git)
 Set these in the environment (or a local, gitignored `.env`):
 
@@ -100,6 +119,8 @@ Set these in the environment (or a local, gitignored `.env`):
 | `GLASSES_OCR_BACKEND` | `apple` / `easy` / `paddle` / `mock` | `apple` |
 | `GLASSES_TTS_READOUT` | optional Kokoro readout | `0` |
 | `GLASSES_DATASHEET_QA` | optional grounded Qwen Q&A | `0` |
+| `GLASSES_HTTPS_PORT` | phone HTTPS listener (needs `make cert`) | `8443` |
+| `GLASSES_HTTPS_HOST` | HTTPS bind (LAN so the phone can reach it) | `0.0.0.0` |
 
 ---
 

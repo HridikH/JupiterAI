@@ -210,6 +210,15 @@ def create_app(store: Optional[StateStore] = None,
     def stream():
         return StreamingResponse(mjpeg_generator(frames), media_type=MJPEG_MEDIA_TYPE)
 
+    @app.get("/mobile")
+    async def mobile():
+        # Phone capture page (served over HTTPS). Uses the phone camera to snap a
+        # photo into the real /capture protocol, and/or stream frames to /frame.
+        p = config.UI_WEB_DIR / "mobile.html"
+        if p.exists():
+            return HTMLResponse(p.read_text())
+        return HTMLResponse("<h1>mobile capture</h1><p>mobile.html missing</p>")
+
     @app.get("/pins")
     async def pins(part: str):
         from . import datasheet_qa
@@ -331,6 +340,8 @@ def create_app(store: Optional[StateStore] = None,
 
 
 def main() -> None:
+    import os
+    import threading
     import uvicorn
     from .logging_setup import setup
     from .pipeline import Pipeline
@@ -339,6 +350,23 @@ def main() -> None:
     hub = WSHub()
     pipe = Pipeline(store, hub).as_fn(threaded=True)
     app = create_app(store=store, hub=hub, pipeline=pipe)
+
+    # Optional HTTPS listener for the phone (camera needs a secure context). Runs
+    # in a background thread sharing the SAME app/store/hub, with lifespan="off"
+    # so hub/voice start exactly once (on the HTTP listener below).
+    if os.path.exists(config.CERT_FILE) and os.path.exists(config.KEY_FILE):
+        def _serve_https():
+            cfg = uvicorn.Config(app, host=config.HTTPS_HOST, port=config.HTTPS_PORT,
+                                 log_level="warning", ws="wsproto", lifespan="off",
+                                 ssl_certfile=config.CERT_FILE, ssl_keyfile=config.KEY_FILE)
+            uvicorn.Server(cfg).run()
+        threading.Thread(target=_serve_https, daemon=True).start()
+        log.info(f"HTTPS (phone) on {config.HTTPS_HOST}:{config.HTTPS_PORT} -> /mobile",
+                 extra={"status": "listen"})
+    else:
+        log.info("HTTPS disabled (no cert) — run `make cert` for phone capture",
+                 extra={"status": "listen"})
+
     log.info(f"serving on {config.HOST}:{config.PORT}", extra={"status": "listen"})
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning", ws="wsproto")
 

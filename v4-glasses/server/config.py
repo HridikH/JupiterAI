@@ -21,6 +21,17 @@ UI_WEB_DIR = ROOT / "ui" / "web"
 HOST = os.getenv("GLASSES_HOST", "127.0.0.1")
 PORT = int(os.getenv("GLASSES_PORT", "8777"))
 
+# ---- Phone capture over HTTPS -----------------------------------------------
+# Mobile browsers require a secure context for camera access AND SubtleCrypto
+# (the sha256 the protocol needs), so the phone talks to the laptop over HTTPS.
+# A second listener binds the LAN on HTTPS_PORT when a self-signed cert exists
+# (make cert). HTTPS_HOST defaults to 0.0.0.0 so the phone can reach it; the
+# plain-HTTP listener stays on HOST for the device/desktop.
+HTTPS_HOST = os.getenv("GLASSES_HTTPS_HOST", "0.0.0.0")
+HTTPS_PORT = int(os.getenv("GLASSES_HTTPS_PORT", "8443"))
+CERT_FILE = os.getenv("GLASSES_CERT", str(ROOT / "data" / "cert.pem"))
+KEY_FILE = os.getenv("GLASSES_KEY", str(ROOT / "data" / "key.pem"))
+
 # ---- Auth -------------------------------------------------------------------
 # Shared token required on every request (X-Glasses-Token). CHANGE THIS.
 # Keep it out of git — set GLASSES_TOKEN in the environment / .env.
