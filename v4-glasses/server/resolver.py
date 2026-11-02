@@ -88,11 +88,21 @@ def _collect_observed(ocr_results: Iterable[OCRResult]) -> list[tuple[str, float
     return list(best.items())
 
 
+# Shortest token (normalized) allowed to produce a match. Real orderable
+# markings are >=4 chars; this stops 3-char noise (a receipt's "505" matching the
+# "555" alias) from ever surfacing as a candidate.
+MIN_MATCH_LEN = 4
+
+
 def _score_part(part: Part, observed: list[tuple[str, float]]) -> Candidate:
     best = Candidate(part=part, score=0.0)
     pkg_norm = confusion.normalize(part.package)
     for cand_str in part.candidate_strings():
+        if len(confusion.normalize(cand_str)) < MIN_MATCH_LEN:
+            continue                      # skip too-short catalog markings/aliases
         for obs_text, conf in observed:
+            if len(confusion.normalize(obs_text)) < MIN_MATCH_LEN:
+                continue                  # skip too-short OCR tokens (noise)
             sim = confusion.similarity(obs_text, cand_str)
             score = sim * (_CONF_BASE + (1.0 - _CONF_BASE) * max(0.0, min(1.0, conf)))
             # package-suffix awareness: reading contains the package token

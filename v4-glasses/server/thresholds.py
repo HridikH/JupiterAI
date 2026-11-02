@@ -23,12 +23,14 @@ from . import config
 DEFAULTS: dict[str, Any] = {
     "version": "thresholds/example-unfrozen",
     "frozen": False,
-    # match thresholds (V3): auto-accept requires BOTH.
-    "accept_score": 0.82,     # top candidate similarity must be >= this
-    "accept_margin": 0.12,    # top1 - top2 similarity must be >= this
+    # match thresholds (V3): auto-accept requires BOTH. These are conservative
+    # placeholder DEFAULTS tuned so random text (receipts, labels) does NOT
+    # surface a part; calibrate on your own images + freeze for final numbers.
+    "accept_score": 0.86,     # top candidate similarity must be >= this
+    "accept_margin": 0.14,    # top1 - top2 similarity must be >= this
     # candidate screen band
-    "candidate_score": 0.60,  # minimum score to be shown as a candidate at all
-    "candidate_band": 0.15,   # candidates within this of top1 are shown together
+    "candidate_score": 0.74,  # minimum score to be shown as a candidate at all
+    "candidate_band": 0.12,   # candidates within this of top1 are shown together
     # image-quality gates for recapture reasons (U2)
     "quality": {
         "blur_var_min": 60.0,      # variance-of-Laplacian below this => blur
