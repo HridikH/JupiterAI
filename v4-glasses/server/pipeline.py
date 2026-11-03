@@ -80,11 +80,65 @@ class Pipeline:
         return resolver.resolve(self.catalog(), ocr_results, th, quality,
                                 (crop.width, crop.height))
 
+    def _auto_web_resolve(self, rid, hint, image_bytes, th):
+        """Automatically web-search + cache a read-but-uncatalogued part, then
+        re-resolve. Returns a new Decision, or None to keep the recapture.
+
+        The part number came from OCR (deterministic), not a guess; we fetch the
+        EXACT datasheet for it. A result is only accepted off an EXACT web match,
+        and is tagged source='web', verified=False by the resolver."""
+        if not hint:
+            return None
+        from . import web_datasheet as wd
+        self.hub.emit("state", request_id=rid, status="searching_web", query=hint)
+        log.info(f"auto web search for uncatalogued part '{hint}'",
+                 extra={"request_id": rid})
+        res = wd.search_datasheet(hint)
+        if not res.get("available"):
+            return None
+        exact = next((r for r in res["results"] if r.get("exact") and r.get("is_pdf")), None)
+        if not exact or not config.WEB_AUTOCACHE:
+            return None
+        try:
+            from catalog import autocache
+            cached = autocache.cache_part(hint, exact["url"])
+        except Exception as e:
+            log.warning(f"auto-cache failed: {e}", extra={"request_id": rid})
+            return None
+        if not (cached.get("cached") or cached.get("reason") == "exists"):
+            return None
+        # reload catalog (new entry) and re-resolve against it
+        self._catalog = None
+        crop, variants, quality = preprocess.preprocess(image_bytes)
+        engine = self.engine()
+        ocr_results = [engine.recognize(arr, variant=name) for name, arr in variants]
+        decision = resolver.resolve(self.catalog(), ocr_results, th, quality,
+                                    (crop.width, crop.height))
+        # attach provenance for the UI
+        decision.result["source"] = "web"
+        decision.result.setdefault("verified", False)
+        decision.result["web_results"] = res["results"][:5]
+        log.info(f"auto-resolved '{hint}' via web -> {decision.status}",
+                 extra={"request_id": rid, "status": decision.status})
+        return decision
+
     def run_sync(self, rec: RequestRecord, image_bytes: bytes) -> None:
         rid = rec.request_id
         th = self.thresholds()
         try:
             decision = self.identify(image_bytes, store_crop_for=rid)
+
+            # Fully-automated fallback: read a part not in the catalog -> the
+            # pipeline itself searches the web, caches the exact datasheet, and
+            # re-resolves. No user action (the hands-free core of the product).
+            if (decision.status == "recapture"
+                    and decision.result.get("reason") == "not_in_catalog"
+                    and config.WEB_AUTOSEARCH):
+                hint = decision.result.get("search_hint", "")
+                new = self._auto_web_resolve(rid, hint, image_bytes, th)
+                if new is not None:
+                    decision = new
+
             self.store.set_result(rid, decision.status, decision.result,
                                   config_version=th.version, config_hash=th.config_hash)
             log.info("resolved", extra={"request_id": rid, "status": decision.status,

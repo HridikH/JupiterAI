@@ -51,9 +51,10 @@ def _best_part_token(ocr_results) -> str:
                 continue
             has_digit = any(c.isdigit() for c in norm)
             has_alpha = any(c.isalpha() for c in norm)
-            score = len(norm) + (6 if (has_digit and has_alpha) else 0)
-            if score > best_score:
-                best, best_score = tok, score
+            if not (has_digit and has_alpha):
+                continue                     # a real part number has BOTH letters and digits
+            if len(norm) > best_score:
+                best, best_score = tok, len(norm)
     return best
 
 # How much OCR confidence modulates a match score (keeps valid low-conf reads
@@ -177,16 +178,16 @@ def pick_recapture_reason(quality: ImageQuality, ocr_results: list[OCRResult],
     any_words = any(res.words for res in ocr_results)
     if not any_words:
         return "unreadable"
+    # If a clear, part-number-like marking was read, prefer "not_in_catalog" (which
+    # drives the automatic web lookup) over framing nags — we have enough to search.
+    if _best_part_token(ocr_results):
+        return "not_in_catalog"
     char_px = _est_char_px(ocr_results)
     if char_px is not None and char_px < q.get("min_char_px", 14.0):
         return "too_far"
     off = _offcenter_frac(ocr_results, crop_size)
     if off is not None and off > q.get("offcenter_frac_max", 0.30):
         return "off_center"
-    # A clear, part-number-like marking was read but didn't match the catalog:
-    # distinguish this from "couldn't read" so the UI can offer a web lookup.
-    if _best_part_token(ocr_results):
-        return "not_in_catalog"
     return "unreadable"
 
 
@@ -202,11 +203,12 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
     best_text = max((r.text for r in ocr_results), key=len, default="").strip()
 
     # --- auto-accept: BOTH bars (V3) ---
-    # Safety: an auto-cached (web-sourced) part that a human hasn't reviewed is
-    # NEVER auto-accepted — it can only be OFFERED as a candidate. This keeps an
-    # unverified OCR+web identification from being presented as definite.
-    auto_unreviewed = bool(top and top.part.auto and not top.part.reviewed)
-    if top and top_score >= th.accept_score and margin >= th.accept_margin and not auto_unreviewed:
+    # The part number is DETERMINISTICALLY READ (never guessed), so a confident
+    # match auto-accepts. Provenance is tagged: a web-sourced, not-yet-human-
+    # reviewed part is accepted but marked verified=False / source="web" so the UI
+    # shows it as unverified (honest) rather than a curated-catalog certainty.
+    if top and top_score >= th.accept_score and margin >= th.accept_margin:
+        web_sourced = bool(top.part.auto and not top.part.reviewed)
         result = {
             "part_number": top.part.part_number,
             "manufacturer": top.part.manufacturer,
@@ -216,6 +218,8 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
             "ocr_text": best_text,
             "matched_string": top.matched_string,
             "datasheet": top.part.datasheet,
+            "source": "web" if web_sourced else "catalog",
+            "verified": not web_sourced,
         }
         return Decision("accepted", result, ranked, top_score, margin)
 

@@ -226,6 +226,14 @@ function connect(){
 function setConn(up){ const c=$("conn"); c.className="chip "+(up?"live":"off"); $("conntxt").textContent=up?"live":"offline"; }
 
 function handle(m){
+  if(m.type==="state" && m.status==="searching_web"){
+    orbState="listening"; tokenPulse=1;
+    $("card").className="card";
+    $("card").innerHTML=`<span class="badge" style="background:#13263a;color:#4493f8;border:1px solid #1f3b5a">Searching web</span>
+      <div class="big-msg">🌐 Looking up “${esc(m.query||"")}”…</div>
+      <div class="hint">Not in the local catalog — fetching the datasheet automatically.</div>`;
+    return;
+  }
   if(m.type==="state"||m.type==="result"){
     if(m.request_id){ latestId=m.request_id; if(m.status) orbState=m.status; tokenPulse=1; if(m.status==="accepted") rippleT=1; refresh(m.request_id); }
   } else if(m.type==="listening"){ setMicListening(true); orbState="listening"; }
@@ -285,10 +293,15 @@ function esc(x){ return String(x==null?"":x).replace(/[&<>"]/g,c=>({'&':'&amp;',
 function dsLink(ds,label){ if(!ds||!ds.path) return `<span class="hint">no datasheet</span>`;
   const p=ds.cite_page||1; return `<a class="btn" target="_blank" href="/pdf?path=${encodeURIComponent(ds.path)}#page=${p}">${label||"Open datasheet"} (p.${p})</a>`; }
 
-function viewAccepted(rec,res){ const id=rec.request_id; return `
-  <span class="badge">Accepted</span>
+function viewAccepted(rec,res){ const id=rec.request_id;
+  const web = res.source==="web" || res.verified===false;
+  const badge = web
+    ? `<span class="badge" style="background:#13263a;color:#4493f8;border:1px solid #1f3b5a">Accepted · via web (unverified)</span>`
+    : `<span class="badge">Accepted</span>`;
+  return `
+  ${badge}
   <div class="partno">${esc(res.part_number)}</div>
-  <div class="meta">${esc(res.manufacturer)} · ${esc(res.package)}</div>
+  <div class="meta">${esc(res.manufacturer)} · ${esc(res.package)}${web?' · <span style="color:#4493f8">found online — confirm before trusting</span>':''}</div>
   <div class="grid">
     <div><div class="kv">
         <div class="k">Score</div><div>${(res.score??0).toFixed(3)}</div>

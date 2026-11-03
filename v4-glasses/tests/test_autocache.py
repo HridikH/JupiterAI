@@ -65,26 +65,28 @@ def test_cache_rejects_too_short(tmp_catalog):
     assert out["cached"] is False
 
 
-# ---- resolver: auto-cached + unreviewed is OFFERED, never auto-accepted ----
+# ---- resolver: web-sourced parts accept but are tagged unverified ----
 def _ocr(text, conf=0.97):
     return [OCRResult(words=[OCRWord(text=text, confidence=conf, bbox=(400, 350, 60, 40))],
                       variant="original")]
 
 
-def test_auto_unreviewed_part_is_candidate_not_accepted():
+def test_auto_unreviewed_part_accepts_but_unverified():
     cat = Catalog.from_dicts([
         {"part_number": "TPS7A4700RGWR", "manufacturer": "TI", "package": "VQFN",
          "top_markings": ["TPS7A4700RGWR"], "auto": True}])
     cat.parts[0].reviewed = False
     d = resolver.resolve(cat, _ocr("TPS7A4700RGWR"), TH, Q, (1000, 800))
-    assert d.status == "candidate_selection"       # offered, not accepted
-    assert d.result["candidates"][0]["part_number"] == "TPS7A4700RGWR"
+    assert d.status == "accepted"                    # hands-free: shown automatically
+    assert d.result["verified"] is False             # but tagged as web-sourced
+    assert d.result["source"] == "web"
 
 
-def test_reviewed_auto_part_can_accept():
+def test_reviewed_auto_part_is_verified():
     cat = Catalog.from_dicts([
         {"part_number": "TPS7A4700RGWR", "manufacturer": "TI", "package": "VQFN",
          "top_markings": ["TPS7A4700RGWR"], "auto": True}])
-    cat.parts[0].reviewed = True                    # human verified
+    cat.parts[0].reviewed = True                     # human verified
     d = resolver.resolve(cat, _ocr("TPS7A4700RGWR"), TH, Q, (1000, 800))
     assert d.status == "accepted"
+    assert d.result["verified"] is True and d.result["source"] == "catalog"

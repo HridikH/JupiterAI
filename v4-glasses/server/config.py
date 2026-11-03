@@ -84,9 +84,14 @@ WEB_SEARCH_TIMEOUT_S = float(os.getenv("GLASSES_WEB_SEARCH_TIMEOUT", "8"))
 SEARXNG_URL = os.getenv("GLASSES_SEARXNG_URL", "http://localhost:8080")  # optional; DDG fallback
 
 # Auto-cache a web-found datasheet the first time a part is seen, so the NEXT
-# sighting matches offline. Auto-cached parts are unreviewed and the resolver
-# only OFFERS them (never auto-accepts) until a human sets reviewed:true.
+# sighting matches offline. Web-sourced parts are tagged verified=False until a
+# human reviews them, but are still shown (hands-free product).
 WEB_AUTOCACHE = os.getenv("GLASSES_WEB_AUTOCACHE", "1") == "1"
+
+# Fully-automated fallback: when a part is read but not in the catalog, the
+# pipeline itself searches the web, caches the exact datasheet, and re-resolves —
+# no user action. This is the hands-free core of the product.
+WEB_AUTOSEARCH = os.getenv("GLASSES_WEB_AUTOSEARCH", "1") == "1"
 
 
 def ensure_dirs() -> None:
