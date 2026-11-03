@@ -134,6 +134,15 @@ def test_read_but_not_in_catalog_reason_and_hint():
     assert d.result["search_hint"] == "ATmega328P"
 
 
+def test_part_number_ranks_above_lot_code():
+    # a chip shows a lot code (4BALQ7KE4) next to the real part number (SN74HC04N);
+    # the part number must rank first so the web fallback tries it first.
+    words = ocr([("4BALQ7KE4", 0.9), ("SN74HC04N", 0.9)])
+    toks = resolver.part_tokens(words)
+    assert toks[0] == "SN74HC04N"
+    assert "4BALQ7KE4" in toks            # lot code still a fallback candidate
+
+
 def test_no_text_is_unreadable_not_not_in_catalog():
     # no words read -> still "unreadable", no false part hint
     d = resolver.resolve(catalog(), [OCRResult(words=[], variant="original")],

@@ -80,23 +80,31 @@ class Pipeline:
         return resolver.resolve(self.catalog(), ocr_results, th, quality,
                                 (crop.width, crop.height))
 
-    def _auto_web_resolve(self, rid, hint, image_bytes, th):
+    def _auto_web_resolve(self, rid, tokens, image_bytes, th):
         """Automatically web-search + cache a read-but-uncatalogued part, then
         re-resolve. Returns a new Decision, or None to keep the recapture.
 
-        The part number came from OCR (deterministic), not a guess; we fetch the
-        EXACT datasheet for it. A result is only accepted off an EXACT web match,
-        and is tagged source='web', verified=False by the resolver."""
-        if not hint:
-            return None
+        Tries each candidate token in rank order (a chip often shows a lot/date
+        code next to the real part number); the first token that returns an EXACT
+        datasheet PDF wins — a lot code has no datasheet, so it's skipped. The part
+        number came from OCR (deterministic), not a guess; we fetch the EXACT
+        datasheet for it, and the resolver tags it source='web', verified=False."""
         from . import web_datasheet as wd
-        self.hub.emit("state", request_id=rid, status="searching_web", query=hint)
-        log.info(f"auto web search for uncatalogued part '{hint}'",
-                 extra={"request_id": rid})
-        res = wd.search_datasheet(hint)
-        if not res.get("available"):
+        tokens = [t for t in (tokens or []) if t][:4]
+        if not tokens:
             return None
-        exact = next((r for r in res["results"] if r.get("exact") and r.get("is_pdf")), None)
+        self.hub.emit("state", request_id=rid, status="searching_web", query=tokens[0])
+        exact = None
+        hint = None
+        for tok in tokens:
+            log.info(f"auto web search for uncatalogued part '{tok}'", extra={"request_id": rid})
+            res = wd.search_datasheet(tok)
+            if not res.get("available"):
+                continue
+            ex = next((r for r in res["results"] if r.get("exact") and r.get("is_pdf")), None)
+            if ex:
+                exact, hint = ex, tok
+                break
         if not exact or not config.WEB_AUTOCACHE:
             return None
         try:
@@ -134,8 +142,9 @@ class Pipeline:
             if (decision.status == "recapture"
                     and decision.result.get("reason") == "not_in_catalog"
                     and config.WEB_AUTOSEARCH):
-                hint = decision.result.get("search_hint", "")
-                new = self._auto_web_resolve(rid, hint, image_bytes, th)
+                tokens = decision.result.get("search_tokens") \
+                    or [decision.result.get("search_hint", "")]
+                new = self._auto_web_resolve(rid, tokens, image_bytes, th)
                 if new is not None:
                     decision = new
 

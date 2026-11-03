@@ -37,25 +37,52 @@ RECAPTURE_MESSAGES = {
 import re as _re
 
 
-def _best_part_token(ocr_results) -> str:
-    """Pick the most part-number-like observed token (letters+digits, longest).
+# Common semiconductor part-number prefixes — a token starting with one of these
+# is far more likely to be the orderable number than a random lot/date code.
+_PART_PREFIX_RE = _re.compile(
+    r"^(SN|LM|NE|SE|SA|NA|CD|HEF|MM|MC|TL|TLC|TLV|TLE|MAX|ICL|AD|OP|LF|LT|LP|"
+    r"ATMEGA|ATTINY|ATSAM|AT|STM|STM32|PIC|PC|TPS|TPA|UA|UL|ULN|L|IR|BC|BD|2N|"
+    r"IRF|IRL|74|54|HC|HCT|LMC|LMV|INA|REF|MCP|DS|FT|CP|CH|ESP|NRF|RFM)", _re.I)
 
-    Part numbers almost always contain digits; this avoids returning logo/brand
-    words like 'MICROCHIP' and gives a clean string for web lookup / auto-cache."""
-    best, best_score = "", -1.0
+
+def _token_score(norm: str) -> float:
+    """Higher = more part-number-like (vs a lot/date code)."""
+    s = float(len(norm))
+    if _PART_PREFIX_RE.match(norm):
+        s += 10.0                            # known mfr prefix (SN74HC04N, LM358P...)
+    if norm[:2].isalpha():
+        s += 3.0                             # part numbers usually start with letters;
+                                             # lot codes often start with a digit (4BALQ...)
+    digits = sum(c.isdigit() for c in norm)
+    if 1 <= digits <= len(norm) - 1:
+        s += 1.0                             # mix of letters and digits (not all-digit)
+    return s
+
+
+def part_tokens(ocr_results, limit: int = 5) -> list[str]:
+    """Ranked, de-duplicated list of part-number-like observed tokens, best first.
+
+    Lets the caller try several (e.g. web-search each) when a chip shows a lot code
+    next to the real part number — the part number wins on prefix/shape, and the
+    web lookup confirms it (a lot code has no datasheet)."""
+    scored: dict[str, float] = {}
     for res in ocr_results:
         for w in res.words:
-            tok = w.text.strip()
-            norm = _re.sub(r"[^A-Za-z0-9]", "", tok)
+            norm = _re.sub(r"[^A-Za-z0-9]", "", w.text.strip())
             if len(norm) < 4:
                 continue
-            has_digit = any(c.isdigit() for c in norm)
-            has_alpha = any(c.isalpha() for c in norm)
-            if not (has_digit and has_alpha):
+            if not (any(c.isdigit() for c in norm) and any(c.isalpha() for c in norm)):
                 continue                     # a real part number has BOTH letters and digits
-            if len(norm) > best_score:
-                best, best_score = tok, len(norm)
-    return best
+            sc = _token_score(norm)
+            if sc > scored.get(norm, -1):
+                scored[norm] = sc
+    ranked = sorted(scored, key=lambda t: scored[t], reverse=True)
+    return ranked[:limit]
+
+
+def _best_part_token(ocr_results) -> str:
+    toks = part_tokens(ocr_results, limit=1)
+    return toks[0] if toks else ""
 
 # How much OCR confidence modulates a match score (keeps valid low-conf reads
 # viable while rewarding confident ones). score *= (BASE + (1-BASE)*conf).
@@ -227,13 +254,15 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
     if top and top_score >= th.candidate_score:
         shown = [c for c in ranked
                  if c.score >= th.candidate_score and (top_score - c.score) <= th.candidate_band]
+        toks = part_tokens(ocr_results)
         result = {"candidates": [c.public() for c in shown],
                   "margin": round(margin, 4), "ocr_text": best_text,
-                  "search_hint": _best_part_token(ocr_results)}
+                  "search_hint": toks[0] if toks else "", "search_tokens": toks}
         return Decision("candidate_selection", result, ranked, top_score, margin)
 
     # --- recapture with a reason (U2) ---
     reason = pick_recapture_reason(quality, ocr_results, crop_size, th)
+    toks = part_tokens(ocr_results)
     result = {"reason": reason, "message": RECAPTURE_MESSAGES[reason], "ocr_text": best_text,
-              "search_hint": _best_part_token(ocr_results)}
+              "search_hint": toks[0] if toks else "", "search_tokens": toks}
     return Decision("recapture", result, ranked, top_score, margin)
