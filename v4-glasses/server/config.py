@@ -73,6 +73,16 @@ VOICE_ALWAYS = os.getenv("GLASSES_VOICE_ALWAYS", "0") == "1"
 # ---- Live camera feed (MJPEG) -----------------------------------------------
 STREAM_FPS = int(os.getenv("GLASSES_STREAM_FPS", "12"))
 
+# ---- Web datasheet lookup (parts NOT in the local catalog) ------------------
+# The offline guarantee covers CACHED catalog parts. For a part the OCR reads
+# that is not in the catalog (or doesn't clear the match thresholds), the system
+# may search the web for that EXACT part number's datasheet. This is a retrieval
+# aid only — it is never part of the deterministic identification decision and
+# never produces/confirms a part number on its own.
+WEB_SEARCH_ENABLED = os.getenv("GLASSES_WEB_SEARCH", "1") == "1"
+WEB_SEARCH_TIMEOUT_S = float(os.getenv("GLASSES_WEB_SEARCH_TIMEOUT", "8"))
+SEARXNG_URL = os.getenv("GLASSES_SEARXNG_URL", "http://localhost:8080")  # optional; DDG fallback
+
 
 def ensure_dirs() -> None:
     for d in (DATA_DIR, CAPTURES_DIR, LOG_DIR):

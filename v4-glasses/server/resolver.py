@@ -169,10 +169,12 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
     second = ranked[1] if len(ranked) > 1 else None
     top_score = top.score if top else 0.0
     margin = top_score - (second.score if second else 0.0)
+    # Best OCR read (longest token), surfaced on every outcome so the UI can offer
+    # a web datasheet lookup for the EXACT read when it isn't a catalog match.
+    best_text = max((r.text for r in ocr_results), key=len, default="").strip()
 
     # --- auto-accept: BOTH bars (V3) ---
     if top and top_score >= th.accept_score and margin >= th.accept_margin:
-        best_text = max((r.text for r in ocr_results), key=len, default="")
         result = {
             "part_number": top.part.part_number,
             "manufacturer": top.part.manufacturer,
@@ -190,10 +192,10 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
         shown = [c for c in ranked
                  if c.score >= th.candidate_score and (top_score - c.score) <= th.candidate_band]
         result = {"candidates": [c.public() for c in shown],
-                  "margin": round(margin, 4)}
+                  "margin": round(margin, 4), "ocr_text": best_text}
         return Decision("candidate_selection", result, ranked, top_score, margin)
 
     # --- recapture with a reason (U2) ---
     reason = pick_recapture_reason(quality, ocr_results, crop_size, th)
-    result = {"reason": reason, "message": RECAPTURE_MESSAGES[reason]}
+    result = {"reason": reason, "message": RECAPTURE_MESSAGES[reason], "ocr_text": best_text}
     return Decision("recapture", result, ranked, top_score, margin)

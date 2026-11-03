@@ -233,6 +233,13 @@ def create_app(store: Optional[StateStore] = None,
         ok = readout.speak(body.get("text", ""))
         return {"ok": ok}
 
+    @app.get("/web_datasheet")
+    async def web_datasheet(part: str):
+        # On-demand web lookup for a part NOT in the local catalog. Retrieval aid
+        # only; never part of identification. Touches the network by design.
+        from . import web_datasheet as wd
+        return wd.search_datasheet(part)
+
     @app.get("/")
     async def index():
         idx = config.UI_WEB_DIR / "index.html"
@@ -258,6 +265,17 @@ def create_app(store: Optional[StateStore] = None,
         if config.TTS_READOUT_ENABLED and ans.get("available"):
             cite = ans.get("citation", {})
             readout.speak(f"{ans['answer']} Source: page {cite.get('page')}.")
+
+    def _web_datasheet(rid: str, part: str) -> None:
+        """Search the web for the datasheet of a part the catalog couldn't match.
+
+        Uses the explicit `part` if given, else the exact OCR read on the record.
+        Emits a 'web_datasheet' event. Never alters the identification result."""
+        from . import web_datasheet as wd
+        rec = store.get(rid) if rid else None
+        q = (part or "").strip() or ((rec.result or {}).get("ocr_text", "") if rec else "")
+        res = wd.search_datasheet(q)
+        hub.emit("web_datasheet", request_id=rid, **res)
 
     def _voice_ask(rid: str) -> None:
         from . import voice
@@ -318,6 +336,10 @@ def create_app(store: Optional[StateStore] = None,
                                      daemon=True).start()
                 elif cmd == "ask_voice":               # spoken datasheet question (Whisper)
                     threading.Thread(target=_voice_ask, args=(msg.get("request_id", ""),),
+                                     daemon=True).start()
+                elif cmd == "web_datasheet":           # web search for a non-catalog part
+                    threading.Thread(target=_web_datasheet,
+                                     args=(msg.get("request_id", ""), msg.get("part", "")),
                                      daemon=True).start()
                 elif cmd == "pinout":                   # UI button toggle
                     threading.Thread(target=_set_pinout, args=(bool(msg.get("visible")),),
