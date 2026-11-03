@@ -78,3 +78,9 @@ parts:
     top_markings: ["LM317T", "LM317"]
     aliases: ["adjustable regulator"]
     min_char_height_mm: 1.2
+
+  - part_number: SN74HC04N
+    manufacturer: Unknown
+    package: unknown
+    top_markings: ["SN74HC04N"]
+    auto: true

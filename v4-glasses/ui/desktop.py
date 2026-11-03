@@ -89,9 +89,20 @@ def open_window():
     print(f"[desktop] opening window via {Path(browser).name}")
     return subprocess.Popen(
         [browser, f"--app={URL}", f"--user-data-dir={profile}",
-         f"--window-size={WIN_SIZE[0]},{WIN_SIZE[1]}",
+         f"--window-size={WIN_SIZE[0]},{WIN_SIZE[1]}", "--new-window",
          "--no-first-run", "--no-default-browser-check", "--disable-features=Translate"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _stop_server(server) -> None:
+    if not server:
+        return
+    print("[desktop] stopping server")
+    server.send_signal(signal.SIGINT)
+    try:
+        server.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        server.kill()
 
 
 def main() -> int:
@@ -101,24 +112,37 @@ def main() -> int:
         window = open_window()
     except RuntimeError as e:
         print(f"[desktop] error: {e}", file=sys.stderr)
-        if server:
-            server.send_signal(signal.SIGINT)
-            server.wait(timeout=10)
+        _stop_server(server)
         return 1
+
+    t0 = time.time()
     try:
         window.wait()
-        print("[desktop] window closed")
     except KeyboardInterrupt:
         print("\n[desktop] interrupted")
         window.terminate()
-    finally:
-        if server:
-            print("[desktop] stopping server")
-            server.send_signal(signal.SIGINT)
-            try:
-                server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                server.kill()
+        _stop_server(server)
+        return 0
+
+    # If the browser process exited almost immediately, Chrome handed off to an
+    # already-running instance (the app window is open THERE). Do NOT kill the
+    # server — keep it alive so the window keeps working. This is the common case
+    # when Chrome is already open; killing the server here was what made captures
+    # fail. Keep running until Ctrl-C.
+    if server is not None and (time.time() - t0) < 3.0:
+        print("[desktop] Chrome handed off to an existing instance; the app window "
+              "is open there. Server stays up.")
+        print(f"[desktop] if no window appeared, open {URL} manually. Ctrl-C to stop.")
+        try:
+            server.wait()
+        except KeyboardInterrupt:
+            print("\n[desktop] interrupted")
+        finally:
+            _stop_server(server)
+        return 0
+
+    print("[desktop] window closed")
+    _stop_server(server)
     return 0
 
 

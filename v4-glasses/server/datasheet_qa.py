@@ -256,14 +256,38 @@ def get_pins(part_number: str) -> dict:
         package = p.package if p else ""
     except Exception:
         pass
-    table: dict[str, dict] = {}
-    page = None
+    pkg_n = _pkg_pin_count(package)
+    # A datasheet can contain several "Pin Functions" matches (real table + stray
+    # references). Pick the SINGLE best section instead of merging them: the one
+    # whose pin numbers best fit the package (most in [1..N], fewest over), earliest
+    # page breaking ties.
+    best, best_score = None, (-1e9, 0)
     for s in list(getattr(idx, "pin_functions", [])):
         parsed = parse_pin_table(s.text, package)
-        if parsed:
-            table.update(parsed)
-            page = page or s.page
-    pins = [{"name": n, "no": v["no"], "desc": v["desc"]} for n, v in table.items()]
+        if not parsed:
+            continue
+        nums = [v["no"] for v in parsed.values()]
+        if pkg_n:
+            in_range = len({n for n in nums if 1 <= n <= pkg_n})
+            over = sum(1 for n in nums if n > pkg_n)
+            score = (in_range - 3 * over, -s.page)
+        else:
+            score = (len(nums), -s.page)
+        if score > best_score:
+            best_score, best = score, (parsed, s.page)
+    if best is None:
+        return {"part": part_number, "page": None, "pins": []}
+    parsed, page = best
+    # keep only pins within the package's range; dedupe by pin number (first wins)
+    pins, seen = [], set()
+    for n, v in parsed.items():
+        no = v["no"]
+        if pkg_n and not (1 <= no <= pkg_n):
+            continue
+        if no in seen:
+            continue
+        seen.add(no)
+        pins.append({"name": n, "no": no, "desc": v["desc"]})
     pins.sort(key=lambda p: p["no"])
     return {"part": part_number, "page": page, "pins": pins}
 
