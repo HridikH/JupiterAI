@@ -30,7 +30,31 @@ RECAPTURE_MESSAGES = {
     "off_center": "Marking is off-center — center the component in view and recapture.",
     "too_far": "Too far — move closer (target ~100–110 mm) and recapture.",
     "unreadable": "Couldn't read the marking — clean the part, improve lighting, and recapture.",
+    "not_in_catalog": "Read the marking, but this part isn't in the local catalog. "
+                      "Search the web for its datasheet to add it.",
 }
+
+import re as _re
+
+
+def _best_part_token(ocr_results) -> str:
+    """Pick the most part-number-like observed token (letters+digits, longest).
+
+    Part numbers almost always contain digits; this avoids returning logo/brand
+    words like 'MICROCHIP' and gives a clean string for web lookup / auto-cache."""
+    best, best_score = "", -1.0
+    for res in ocr_results:
+        for w in res.words:
+            tok = w.text.strip()
+            norm = _re.sub(r"[^A-Za-z0-9]", "", tok)
+            if len(norm) < 4:
+                continue
+            has_digit = any(c.isdigit() for c in norm)
+            has_alpha = any(c.isalpha() for c in norm)
+            score = len(norm) + (6 if (has_digit and has_alpha) else 0)
+            if score > best_score:
+                best, best_score = tok, score
+    return best
 
 # How much OCR confidence modulates a match score (keeps valid low-conf reads
 # viable while rewarding confident ones). score *= (BASE + (1-BASE)*conf).
@@ -159,6 +183,10 @@ def pick_recapture_reason(quality: ImageQuality, ocr_results: list[OCRResult],
     off = _offcenter_frac(ocr_results, crop_size)
     if off is not None and off > q.get("offcenter_frac_max", 0.30):
         return "off_center"
+    # A clear, part-number-like marking was read but didn't match the catalog:
+    # distinguish this from "couldn't read" so the UI can offer a web lookup.
+    if _best_part_token(ocr_results):
+        return "not_in_catalog"
     return "unreadable"
 
 
@@ -196,10 +224,12 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
         shown = [c for c in ranked
                  if c.score >= th.candidate_score and (top_score - c.score) <= th.candidate_band]
         result = {"candidates": [c.public() for c in shown],
-                  "margin": round(margin, 4), "ocr_text": best_text}
+                  "margin": round(margin, 4), "ocr_text": best_text,
+                  "search_hint": _best_part_token(ocr_results)}
         return Decision("candidate_selection", result, ranked, top_score, margin)
 
     # --- recapture with a reason (U2) ---
     reason = pick_recapture_reason(quality, ocr_results, crop_size, th)
-    result = {"reason": reason, "message": RECAPTURE_MESSAGES[reason], "ocr_text": best_text}
+    result = {"reason": reason, "message": RECAPTURE_MESSAGES[reason], "ocr_text": best_text,
+              "search_hint": _best_part_token(ocr_results)}
     return Decision("recapture", result, ranked, top_score, margin)

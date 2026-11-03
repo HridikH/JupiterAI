@@ -124,6 +124,24 @@ def test_empty_catalog_never_accepts():
     assert d.status == "recapture"       # no catalog => cannot be accepted
 
 
+def test_read_but_not_in_catalog_reason_and_hint():
+    # A clear part-like marking + brand word, none in the catalog -> not_in_catalog,
+    # and the search hint is the part token (with digits), NOT the brand word.
+    words = ocr([("MICROCHIP", 0.95), ("ATmega328P", 0.95)])
+    d = resolver.resolve(catalog(), words, TH, GOOD_Q, CROP)
+    assert d.status == "recapture"
+    assert d.result["reason"] == "not_in_catalog"
+    assert d.result["search_hint"] == "ATmega328P"
+
+
+def test_no_text_is_unreadable_not_not_in_catalog():
+    # no words read -> still "unreadable", no false part hint
+    d = resolver.resolve(catalog(), [OCRResult(words=[], variant="original")],
+                         TH, GOOD_Q, CROP)
+    assert d.result["reason"] == "unreadable"
+    assert d.result["search_hint"] == ""
+
+
 def test_near_miss_does_not_accept():
     # a read that's close to NE555P but below accept_score must not auto-accept
     d = resolver.resolve(catalog(), ocr([("NE5XX", 0.5)]), TH, GOOD_Q, CROP)

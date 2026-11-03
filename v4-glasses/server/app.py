@@ -273,7 +273,9 @@ def create_app(store: Optional[StateStore] = None,
         Emits a 'web_datasheet' event. Never alters the identification result."""
         from . import web_datasheet as wd
         rec = store.get(rid) if rid else None
-        q = (part or "").strip() or ((rec.result or {}).get("ocr_text", "") if rec else "")
+        res_dict = (rec.result or {}) if rec else {}
+        # prefer the clean part-like token (e.g. "ATmega328P") over the full read
+        q = (part or "").strip() or res_dict.get("search_hint") or res_dict.get("ocr_text", "")
         res = wd.search_datasheet(q)
         # Auto-cache: the first time we see a part, if the top result is an EXACT
         # PDF match, download+register it so the NEXT sighting matches offline.

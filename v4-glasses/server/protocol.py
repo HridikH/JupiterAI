@@ -39,7 +39,7 @@ STATES = (
 TERMINAL_STATES = ("accepted", "candidate_selection", "recapture", "error")
 
 # ---- Recapture reasons (U2) -------------------------------------------------
-RECAPTURE_REASONS = ("blur", "glare", "off_center", "too_far", "unreadable")
+RECAPTURE_REASONS = ("blur", "glare", "off_center", "too_far", "unreadable", "not_in_catalog")
 
 # ---- Error codes (§8) -------------------------------------------------------
 E_UNAUTHORIZED = "E_UNAUTHORIZED"

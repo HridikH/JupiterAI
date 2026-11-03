@@ -313,7 +313,7 @@ function viewCandidates(rec,res){ const id=rec.request_id;
   const note=chosen[id]!==undefined?`<div class="hint" style="margin-top:12px">Selected <b>${esc((res.candidates[chosen[id]]||{}).part_number)}</b>. Decision logged separately.</div>`
     :`<div class="hint" style="margin-top:12px">Several parts are plausible — pick the correct one. Nothing is accepted until you choose.</div>`;
   // "none of these?" -> web lookup for the exact read (e.g. a part not in our catalog)
-  const web = webBtn(res.ocr_text);
+  const web = webBtn(res.search_hint || res.ocr_text);
   const none = web ? `<div class="hint" style="margin-top:8px">None of these match? ${web}</div>` : "";
   return `<span class="badge">Choose a candidate</span><div class="big-msg">${(res.candidates||[]).length} plausible matches</div><div class="cards">${rows}</div>${note}${none}`;
 }
@@ -342,9 +342,16 @@ function renderWeb(m){
 }
 function webBtn(text){ const t=(text||"").trim(); if(!t) return "";
   return `<div><button class="btn ghost websearch-btn" onclick="webSearch('${t.replace(/'/g,"")}')">🔎 Search web for datasheet: “${esc(t)}”</button></div>`; }
-function viewRecapture(res){ const ic={blur:"🌫",glare:"✨",off_center:"🎯",too_far:"🔭",unreadable:"❓"};
-  // If text was read but didn't match the catalog, offer a web datasheet lookup for that exact read.
-  return `<span class="badge">Recapture</span><div class="big-msg">${ic[res.reason]||"↺"} ${esc((res.reason||"").replace("_"," "))}</div><div class="hint" style="font-size:16px">${esc(res.message)}</div>${webBtn(res.ocr_text)}`; }
+function viewRecapture(res){ const ic={blur:"🌫",glare:"✨",off_center:"🎯",too_far:"🔭",unreadable:"❓",not_in_catalog:"🔍"};
+  const hint = res.search_hint || res.ocr_text;
+  // "not_in_catalog": we DID read a part-like marking, it's just not in our catalog.
+  if(res.reason==="not_in_catalog"){
+    return `<span class="badge">Not in catalog</span>
+      <div class="big-msg">🔍 Read “${esc(hint)}”</div>
+      <div class="hint" style="font-size:15px">This part isn't in the local catalog yet. Search the web for its datasheet — if an exact match is found it's cached automatically, and the next capture will recognize it.</div>
+      ${webBtn(hint)}`;
+  }
+  return `<span class="badge">Recapture</span><div class="big-msg">${ic[res.reason]||"↺"} ${esc((res.reason||"").replace("_"," "))}</div><div class="hint" style="font-size:16px">${esc(res.message)}</div>${webBtn(hint)}`; }
 function viewError(res){ return `<span class="badge">Error</span><div class="big-msg">${esc(res.code)}</div><div class="hint">${esc(res.message)}</div>`; }
 
 /* ================= datasheet Q&A (Whisper + grounded answer) ================= */
