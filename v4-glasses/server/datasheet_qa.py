@@ -121,55 +121,149 @@ _SIGNAL_ALIASES = [
 ]
 
 
-def parse_pin_table(text: str) -> dict[str, dict]:
-    """Parse a 'Pin Functions' section into {NAME: {numbers:[...], desc:str}}.
+# Pin-name shapes across op-amps, logic, timers, comparators, regulators.
+_PIN_NAME_RE = re.compile(
+    r"^(?:"
+    r"GND|NC|DNC|"
+    r"V(?:CC|DD|SS|EE|REF|IN|OUT|BIAS)?[+\-]?|"          # V+, V-, VCC+, VDD, VIN...
+    r"[1-4]?IN[+\-]?|IN[1-4]?[+\-]?|"                      # IN+, 1IN-, IN1+
+    r"[1-4]?OUT|OUT[1-4]?|"                                # OUT, 1OUT, OUT2
+    r"Q[A-H]'?|SER|R?CLK|RCLK|SRCLK|SRCLR|OE|"            # shift-register / logic
+    r"RESET|TRIG|THRES|DISCH|CONT|CV|"                     # 555
+    r"ADJ|EN|CS|A|B|C|D|Y|J|K"
+    r")$", re.I)
 
-    Handles the typical TI layout where NAME, pin NO.(s), TYPE, and DESCRIPTION
-    extract as separate lines. The first number is the primary (DIP/SOIC) pin."""
+_TYPE_WORDS = {"I", "O", "IO", "INPUT", "OUTPUT", "INPUTOUTPUT", "POWER", "GROUND",
+               "PASSIVE", "SUPPLY", "ANALOG", "DIGITAL"}
+
+
+def _pkg_pin_count(package: str) -> int | None:
+    p = (package or "").upper().replace(" ", "")
+    if "TO-220" in p or "TO220" in p or "TO-92" in p or "TO92" in p:
+        return 3
+    m = re.findall(r"(\d+)", p)                 # trailing number of PDIP-8 / SOIC-14 / SOT23-8
+    return int(m[-1]) if m else None
+
+
+def _norm_name(line: str) -> str:
+    # unify dash variants (en/em/minus) to ASCII '-' so 'IN1–' == 'IN1-'
+    return re.sub(r"[‒–—―−]", "-", re.sub(r"\s", "", line)).upper()
+
+
+def _is_name(line: str) -> bool:
+    norm = _norm_name(line)
+    return bool(_PIN_NAME_RE.match(norm)) and len(norm) <= 7
+
+
+def parse_pin_table(text: str, package: str = "") -> dict[str, dict]:
+    """Parse a 'Pin Functions' section into {NAME: {no:int, desc:str}}.
+
+    Robust to TI's varying layouts: a row is NAME then one pin-number CELL per
+    package column (digits, a comma-list for NC, or an em-dash for N/A), then a
+    TYPE word and DESCRIPTION. Because the package-column ORDER differs between
+    datasheets, we pick the column whose pin numbers form {1..N} for the part's
+    package (N from `package`), instead of blindly taking the first number."""
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    res: dict[str, dict] = {}
+    rows = []  # (name, [cell,...]) where cell is int | None(dash) | 'multi'
     i = 0
     while i < len(lines):
-        nm = re.sub(r"[^A-Z]", "", lines[i].upper())
-        if nm in _PIN_NAMES and lines[i].strip().upper() == nm:
-            j, nums = i + 1, []
-            while j < len(lines) and re.fullmatch(r"[\d,\s]+", lines[j]):
-                nums += [int(x) for x in re.findall(r"\d+", lines[j])]
+        if _is_name(lines[i]):
+            name = _norm_name(lines[i])
+            j = i + 1
+            cells = []
+            while j < len(lines):
+                c = re.sub(r"\s", "", lines[j])
+                if re.fullmatch(r"\d+", c):
+                    cells.append(int(c))
+                elif re.fullmatch(r"[\d]+(?:,[\d]+)+", c):
+                    cells.append("multi")
+                elif c in ("—", "-", "–", "−"):
+                    cells.append(None)
+                else:
+                    break
                 j += 1
             desc = []
-            while j < len(lines):
-                cand = re.sub(r"[^A-Z]", "", lines[j].upper())
-                if (cand in _PIN_NAMES and lines[j].strip().upper() == cand) \
-                        or re.fullmatch(r"[\d,\s]+", lines[j]):
-                    break
+            while j < len(lines) and not _is_name(lines[j]) \
+                    and not re.fullmatch(r"[\d,—\-–−]+", re.sub(r"\s", "", lines[j])):
                 desc.append(lines[j])
                 j += 1
-            d = " ".join(desc).strip(" —").strip()
-            d = re.split(r"\s+www\.|\s+SLFS|\s+Copyright|\s+Submit Document", d)[0]  # drop footer
-            res[nm] = {"numbers": nums, "desc": d[:90].strip()}
-            i = j
+            d = " ".join(desc).strip(" —")
+            d = re.split(r"\s+www\.|\s+SLFS|\s+Copyright|\s+Submit", d)[0]
+            rows.append((name, cells, d[:90].strip()))
+            i = j if j > i else i + 1
         else:
             i += 1
-    return res
+
+    # Rows usable for column detection: those with no comma-list cell. KEEP
+    # single-valued NC rows (they carry real pin numbers that complete {1..N}).
+    numeric = [(n, c, d) for (n, c, d) in rows if c and "multi" not in c]
+    if not numeric:
+        return {}
+    from statistics import mode
+    try:
+        ncols = mode(len(c) for _, c, _ in numeric)
+    except Exception:
+        ncols = max(len(c) for _, c, _ in numeric)
+    # trim trailing dash (a — TYPE cell) on over-length rows
+    norm_rows = []
+    for n, c, d in numeric:
+        cc = list(c)
+        while len(cc) > ncols and cc and cc[-1] is None:
+            cc.pop()
+        norm_rows.append((n, cc, d))
+
+    pkg_n = _pkg_pin_count(package)
+
+    def col_vals(col):
+        return [c[col] for _, c, _ in norm_rows if col < len(c) and isinstance(c[col], int)]
+
+    best_col, best_score = 0, (-1e9,)
+    for col in range(ncols):
+        s = set(col_vals(col))
+        if pkg_n and s == set(range(1, pkg_n + 1)):
+            best_col = col; break               # exact package-pin match — done
+        if pkg_n:
+            in_range = {v for v in s if 1 <= v <= pkg_n}
+            over = sum(1 for v in s if v > pkg_n)
+            # most in-range distinct pins, penalize out-of-range, prefer reaching pkg_n
+            score = (len(in_range) - 3 * over, max(s) if s else 0)
+        else:
+            run = 0
+            while (run + 1) in s:
+                run += 1
+            score = (run,)
+        if score > best_score:
+            best_score, best_col = score, col
+
+    out: dict[str, dict] = {}
+    for n, c, d in norm_rows:
+        if n in ("NC", "DNC"):
+            continue                             # don't list no-connect pins in the overlay
+        if best_col < len(c) and isinstance(c[best_col], int) and n not in out:
+            out[n] = {"no": c[best_col], "desc": d}
+    return out
 
 
 def get_pins(part_number: str) -> dict:
-    """Structured pin map for the live-feed overlay: {part, page, pins:[{name,no,desc}]}.
-
-    Parses the datasheet's Pin Functions section (first/primary package number).
-    Returns an empty list if the part has no cached datasheet or pin table."""
+    """Structured pin map for the live-feed overlay: {part, page, pins:[{name,no,desc}]}."""
     idx = _index(part_number)
     if idx is None:
         return {"part": part_number, "page": None, "pins": []}
+    package = ""
+    try:
+        from server.catalog_api import load
+        p = load().by_number(part_number)
+        package = p.package if p else ""
+    except Exception:
+        pass
     table: dict[str, dict] = {}
     page = None
     for s in list(getattr(idx, "pin_functions", [])):
-        parsed = parse_pin_table(s.text)
+        parsed = parse_pin_table(s.text, package)
         if parsed:
             table.update(parsed)
             page = page or s.page
-    pins = [{"name": n, "no": v["numbers"][0], "desc": v["desc"]}
-            for n, v in table.items() if v["numbers"]]
+    pins = [{"name": n, "no": v["no"], "desc": v["desc"]} for n, v in table.items()]
     pins.sort(key=lambda p: p["no"])
     return {"part": part_number, "page": page, "pins": pins}
 
@@ -181,33 +275,22 @@ def _index(part_number: str):
 
 
 def _pin_answer(idx, part_number: str, question: str) -> dict | None:
-    secs = list(getattr(idx, "pin_functions", []))
-    if not secs:
+    data = get_pins(part_number)
+    pins = data.get("pins", [])
+    if not pins:
         return None
-    table: dict[str, dict] = {}
-    page = None
-    for s in secs:
-        parsed = parse_pin_table(s.text)
-        if parsed:
-            table.update(parsed)
-            page = page or s.page
-    if not table:
-        return None
+    page = data.get("page")
+    by_name = {p["name"]: p for p in pins}
     ql = question.lower()
     for sig, keys in _SIGNAL_ALIASES:
-        if sig in table and table[sig]["numbers"] and any(k in ql for k in keys):
-            num = table[sig]["numbers"][0]
-            desc = table[sig]["desc"]
-            ans = f"{sig} ({desc}) is pin {num}." if desc else f"{sig} is pin {num}."
+        if sig in by_name and any(k in ql for k in keys):
+            p = by_name[sig]
+            ans = f"{sig} ({p['desc']}) is pin {p['no']}." if p.get("desc") else f"{sig} is pin {p['no']}."
             return {"available": True, "answer": ans, "source": "pin_table",
                     "citation": {"part_number": part_number, "page": page, "section": "pin_functions"}}
-    # generic "what are the pins" -> list them
-    listing = ", ".join(f"{n} = pin {v['numbers'][0]}" for n, v in table.items() if v["numbers"])
-    if listing:
-        return {"available": True, "answer": f"Pin map (primary package): {listing}.",
-                "source": "pin_table",
-                "citation": {"part_number": part_number, "page": page, "section": "pin_functions"}}
-    return None
+    listing = ", ".join(f"{p['name']} = pin {p['no']}" for p in pins)
+    return {"available": True, "answer": f"Pin map: {listing}.", "source": "pin_table",
+            "citation": {"part_number": part_number, "page": page, "section": "pin_functions"}}
 
 
 _GROUNDED_SYSTEM = (

@@ -60,32 +60,45 @@ PIN_TABLE_TEXT = (
 )
 
 
-def test_parse_pin_table():
-    t = q.parse_pin_table(PIN_TABLE_TEXT)
-    assert t["GND"]["numbers"][0] == 1
-    assert t["TRIG"]["numbers"][0] == 2
-    assert t["OUT"]["numbers"][0] == 3
-    assert t["VCC"]["numbers"][0] == 8
+def test_parse_pin_table_picks_dip_column():
+    # col0 = DIP (1,2,3,8), col1 = LCCC (2,5,7,20). With pkg=PDIP-8 the DIP column
+    # (numbers that fit 1..8) must be chosen, not the LCCC column.
+    t = q.parse_pin_table(PIN_TABLE_TEXT, package="PDIP-8")
+    assert t["GND"]["no"] == 1
+    assert t["TRIG"]["no"] == 2
+    assert t["OUT"]["no"] == 3
+    assert t["VCC"]["no"] == 8
     assert "www." not in t["VCC"]["desc"]      # footer trimmed
 
 
-@dataclass
-class PinIdx:
-    pin_functions: list
+def test_parse_pin_table_handles_endash_minus():
+    # op-amp names with en-dash minus must parse (IN1– == IN1-)
+    txt = ("Pin Functions\nNAME\nNO.\n"
+           "OUT1\n1\nOutput\nOutput\n"
+           "IN1–\n2\nInput\nNeg input\n"   # en-dash
+           "IN1+\n3\nInput\nPos input\n"
+           "V–\n4\n—\nGround\n")
+    t = q.parse_pin_table(txt, package="PDIP-8")
+    assert t["IN1-"]["no"] == 2
+    assert t["V-"]["no"] == 4
 
 
-def test_pin_answer_maps_ground_to_number():
-    from catalog.page_index import Section
-    idx = PinIdx(pin_functions=[Section("pin_functions", 3, PIN_TABLE_TEXT)])
-    r = q._pin_answer(idx, "NE555P", "which pin do i connect to ground")
+def test_pin_answer_maps_ground(monkeypatch):
+    monkeypatch.setattr(q, "get_pins", lambda pn: {
+        "part": pn, "page": 3,
+        "pins": [{"name": "GND", "no": 1, "desc": "Ground"},
+                 {"name": "VCC", "no": 8, "desc": "Supply"}]})
+    r = q._pin_answer(object(), "NE555P", "which pin do i connect to ground")
     assert r and r["source"] == "pin_table"
     assert "pin 1" in r["answer"] and r["citation"]["page"] == 3
 
 
-def test_pin_answer_lists_all_for_generic():
-    from catalog.page_index import Section
-    idx = PinIdx(pin_functions=[Section("pin_functions", 3, PIN_TABLE_TEXT)])
-    r = q._pin_answer(idx, "NE555P", "what are the pins")
+def test_pin_answer_lists_all_for_generic(monkeypatch):
+    monkeypatch.setattr(q, "get_pins", lambda pn: {
+        "part": pn, "page": 3,
+        "pins": [{"name": "GND", "no": 1, "desc": ""},
+                 {"name": "VCC", "no": 8, "desc": ""}]})
+    r = q._pin_answer(object(), "NE555P", "what are the pins")
     assert "GND = pin 1" in r["answer"] and "VCC = pin 8" in r["answer"]
 
 
