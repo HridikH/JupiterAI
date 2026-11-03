@@ -27,3 +27,5 @@ properties:
   min_char_height_mm:
     type: number
     exclusiveMinimum: 0
+  auto:
+    type: boolean   # true = auto-cached from a web datasheet lookup (unreviewed)

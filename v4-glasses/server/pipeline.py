@@ -31,6 +31,8 @@ class Pipeline:
         self.store = store
         self.hub = hub
         self._catalog = catalog
+        self._catalog_injected = catalog is not None   # don't hot-reload a test catalog
+        self._catalog_mtime = None
         self._engine = engine
         self._require_frozen = require_frozen
         self._thresholds = thresholds
@@ -38,9 +40,19 @@ class Pipeline:
 
     # lazy so tests/stage-2 don't need macOS Vision or a real catalog
     def catalog(self) -> Catalog:
-        if self._catalog is None:
-            from .catalog_api import load_default_catalog
+        # Reload when parts.yaml changes (e.g. a web datasheet was auto-cached), so
+        # a newly seen part matches offline on the very next capture. An explicitly
+        # injected catalog (tests) is never auto-reloaded.
+        from .catalog_api import load_default_catalog
+        from . import config as _cfg
+        pf = _cfg.CATALOG_DIR / "parts.yaml"
+        try:
+            mtime = pf.stat().st_mtime
+        except OSError:
+            mtime = None
+        if self._catalog is None or (self._catalog_injected is False and mtime != self._catalog_mtime):
             self._catalog = load_default_catalog()
+            self._catalog_mtime = mtime
         return self._catalog
 
     def engine(self) -> OCREngine:

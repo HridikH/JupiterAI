@@ -174,7 +174,11 @@ def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
     best_text = max((r.text for r in ocr_results), key=len, default="").strip()
 
     # --- auto-accept: BOTH bars (V3) ---
-    if top and top_score >= th.accept_score and margin >= th.accept_margin:
+    # Safety: an auto-cached (web-sourced) part that a human hasn't reviewed is
+    # NEVER auto-accepted — it can only be OFFERED as a candidate. This keeps an
+    # unverified OCR+web identification from being presented as definite.
+    auto_unreviewed = bool(top and top.part.auto and not top.part.reviewed)
+    if top and top_score >= th.accept_score and margin >= th.accept_margin and not auto_unreviewed:
         result = {
             "part_number": top.part.part_number,
             "manufacturer": top.part.manufacturer,

@@ -33,3 +33,5 @@ properties:
     minimum: 1
   family:
     type: string
+  auto:
+    type: boolean   # true = auto-cached from a web datasheet lookup (unreviewed)

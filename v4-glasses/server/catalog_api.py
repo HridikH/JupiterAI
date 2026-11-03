@@ -27,6 +27,12 @@ class Part:
     min_char_height_mm: Optional[float] = None
     # Filled from manifest.yaml at load (stage 3): {"path": ..., "cite_page": ...}
     datasheet: dict[str, Any] = field(default_factory=dict)
+    # Provenance: auto=True means this entry was auto-cached from a web datasheet
+    # lookup of an OCR read (not hand-curated). reviewed mirrors the manifest flag.
+    # The resolver NEVER auto-accepts an auto&&unreviewed part — it is candidate-only
+    # until a human verifies it (preserves "never present uncertain as definite").
+    auto: bool = False
+    reviewed: bool = True
 
     def candidate_strings(self) -> list[str]:
         """All strings an OCR read could legitimately match for this part.
@@ -58,6 +64,7 @@ class Catalog:
                 aliases=list(r.get("aliases", [])),
                 min_char_height_mm=r.get("min_char_height_mm"),
                 datasheet=dict(r.get("datasheet", {})),
+                auto=bool(r.get("auto", False)),
             )
             for r in rows
         ]
@@ -104,6 +111,7 @@ def load(parts_path: Optional[Path] = None,
                 p.datasheet = {"path": m.get("cache_path"),
                                "cite_page": m.get("cite_page", 1),
                                "url": m.get("url")}
+                p.reviewed = bool(m.get("reviewed", True))
     return cat
 
 

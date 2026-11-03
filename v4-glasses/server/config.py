@@ -83,6 +83,11 @@ WEB_SEARCH_ENABLED = os.getenv("GLASSES_WEB_SEARCH", "1") == "1"
 WEB_SEARCH_TIMEOUT_S = float(os.getenv("GLASSES_WEB_SEARCH_TIMEOUT", "8"))
 SEARXNG_URL = os.getenv("GLASSES_SEARXNG_URL", "http://localhost:8080")  # optional; DDG fallback
 
+# Auto-cache a web-found datasheet the first time a part is seen, so the NEXT
+# sighting matches offline. Auto-cached parts are unreviewed and the resolver
+# only OFFERS them (never auto-accepts) until a human sets reviewed:true.
+WEB_AUTOCACHE = os.getenv("GLASSES_WEB_AUTOCACHE", "1") == "1"
+
 
 def ensure_dirs() -> None:
     for d in (DATA_DIR, CAPTURES_DIR, LOG_DIR):

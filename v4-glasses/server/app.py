@@ -275,6 +275,21 @@ def create_app(store: Optional[StateStore] = None,
         rec = store.get(rid) if rid else None
         q = (part or "").strip() or ((rec.result or {}).get("ocr_text", "") if rec else "")
         res = wd.search_datasheet(q)
+        # Auto-cache: the first time we see a part, if the top result is an EXACT
+        # PDF match, download+register it so the NEXT sighting matches offline.
+        # Registered as unreviewed -> offered, never auto-accepted (see resolver).
+        if config.WEB_AUTOCACHE and res.get("available"):
+            exact = next((r for r in res["results"] if r.get("exact") and r.get("is_pdf")), None)
+            if exact:
+                try:
+                    from catalog import autocache
+                    cached = autocache.cache_part(q, exact["url"])
+                    res["autocached"] = cached
+                    if cached.get("cached"):
+                        log.info(f"auto-cached datasheet for {q}",
+                                 extra={"request_id": rid})
+                except Exception as e:
+                    log.warning(f"autocache failed: {e}", extra={"request_id": rid})
         hub.emit("web_datasheet", request_id=rid, **res)
 
     def _voice_ask(rid: str) -> None:
