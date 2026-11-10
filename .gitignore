@@ -4,9 +4,6 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# Node
-node_modules/
-
 # OS
 .DS_Store
 
@@ -14,6 +11,7 @@ node_modules/
 data/*.db
 data/*.sqlite
 data/memory.db
+data/browser-profile/
 
 # Logs / caches
 *.log

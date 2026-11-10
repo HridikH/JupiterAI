@@ -60,11 +60,15 @@ Continuous VAD during playback; sustained speech (300ms, aggressiveness 3) kills
 
 ```
 python scripts/fetch_models.py   # once, first — downloads with visible progress
-npm install                      # once — pulls Electron
-npm start                        # native window; spawns the Python server itself
+python scripts/desktop.py        # app window; spawns the Python server itself
 ```
 
 `python -m jarvis.server` still works standalone (opens a browser tab instead).
+The desktop shell is a thin launcher: it starts the server, waits for port 7777,
+then opens Chrome (or Brave/Edge/Chromium) in `--app` mode against it — a
+frameless window with its own profile, no tabs or URL bar. No Node, no Electron:
+the unsigned Electron binary is blocked outright by macOS Gatekeeper on current
+releases, and a notarized browser you already have does the same job for 0 MB.
 Prefetching first matters: model downloads inside the app look like a hang —
 the progress bars go to the terminal, and unauthenticated HuggingFace downloads
 are throttled (set HF_TOKEN to speed them up).

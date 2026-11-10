@@ -653,7 +653,7 @@ def main() -> None:
     app = create_app(backend)
     backend.switch("standby" if config.WAKE_ON_CLAP and config.WAKE_SOUND.exists()
                    else "menu")
-    if "--no-browser" not in sys.argv:  # Electron passes this and opens its own window
+    if "--no-browser" not in sys.argv:  # scripts/desktop.py passes this and opens its own window
         threading.Timer(1.0, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
     print(f"JARVIS dashboard -> http://{HOST}:{PORT}")
     # ws="wsproto": uvicorn's websockets-sansio backend (the default with

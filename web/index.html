@@ -45,8 +45,7 @@
     background: linear-gradient(180deg, rgba(26,15,8,.75), rgba(26,15,8,.25));
     backdrop-filter: blur(6px);
   }
-  body.electron header { -webkit-app-region: drag; padding-left: 84px; }
-  body.electron header button { -webkit-app-region: no-drag; }
+  body.appwin header { padding-top: 4px; }
   header h1 {
     font-size: 14px; letter-spacing: .34em; font-weight: 600;
     text-shadow: 0 0 16px rgba(255,171,77,.55);
@@ -252,7 +251,9 @@ let state = "menu", mode = "menu";
 let jbubble = null, pbubble = null;
 let audioTarget = 0, audioAt = 0;
 let tokenPulse = 0, rippleT = 0;
-if (navigator.userAgent.includes("Electron")) document.body.classList.add("electron");
+// App-mode window (scripts/desktop.py launches Chrome with --app): no tab strip
+// or URL bar, so reclaim that space. Plain browser tabs keep the default header.
+if (window.matchMedia("(display-mode: standalone)").matches) document.body.classList.add("appwin");
 
 const $ = (id) => document.getElementById(id);
 const log = $("log");
