@@ -74,6 +74,9 @@ def create_app(store: Optional[StateStore] = None,
     hub = hub or WSHub()
     pipeline = pipeline or stage1_stub_pipeline(hub, store)
     frames = FrameBuffer()
+    from .chip_tracker import ChipTracker
+    tracker = ChipTracker(frames, hub.emit)
+    stream_stop = threading.Event()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -86,8 +89,14 @@ def create_app(store: Optional[StateStore] = None,
                 hub.emit("voice_state", listening=True)
             else:
                 log.info("always-listening requested but voice stack unavailable")
+        if config.DEVICE_STREAM_URL:
+            from .stream import pull_mjpeg
+            threading.Thread(target=pull_mjpeg, args=(config.DEVICE_STREAM_URL, frames, stream_stop),
+                             daemon=True, name="device-stream").start()
         log.info("glasses server up", extra={"status": "ready"})
         yield
+        stream_stop.set()
+        tracker.stop()
         from . import voice
         voice.stop_always_listening()
 
@@ -95,6 +104,7 @@ def create_app(store: Optional[StateStore] = None,
     app.state.store = store
     app.state.hub = hub
     app.state.frames = frames
+    app.state.tracker = tracker
 
     # serve vendored UI assets (three.min.js, etc.) locally so the demo is offline
     assets_dir = config.UI_WEB_DIR / "assets"
@@ -306,18 +316,36 @@ def create_app(store: Optional[StateStore] = None,
         _answer_question(rid, text)
 
     def _set_pinout(visible: bool) -> None:
-        """Toggle the pinout overlay for the latest accepted part (voice/UI)."""
+        """Toggle the pinout overlay for the latest accepted part (voice/UI).
+
+        With the overlay on, the chip tracker places each pin on the chip in the
+        live feed (chip_pose events); the static pin map is the fallback."""
         if not visible:
+            tracker.stop()
             hub.emit("pinout", visible=False)
             return
         from . import datasheet_qa
+        from .catalog_api import load
         rec = store.latest_accepted()
         if not rec:
             hub.emit("pinout", visible=False, reason="no accepted part yet")
             return
-        info = datasheet_qa.get_pins((rec.result or {}).get("part_number", ""))
-        hub.emit("pinout", visible=bool(info.get("pins")), request_id=rec.request_id,
-                 part=info.get("part"), page=info.get("page"), pins=info.get("pins", []),
+        part_no = (rec.result or {}).get("part_number", "")
+        info = datasheet_qa.get_pins(part_no)
+        pins = info.get("pins", [])
+        tracking = False
+        if pins:
+            part = load().by_number(part_no)
+            markings = part.candidate_strings() if part else [part_no]
+            tracking = tracker.start({"part": part_no, "markings": markings, "pins": pins,
+                                      "pin_count": info.get("pin_count"),
+                                      "layout": info.get("layout", "dip")})
+        hub.emit("pinout", visible=bool(pins), request_id=rec.request_id,
+                 part=info.get("part"), page=info.get("page"), pins=pins,
+                 package=info.get("package"), layout=info.get("layout"),
+                 pin_count=info.get("pin_count"), source=info.get("source"),
+                 tracking=tracking,
+                 reason=None if pins else "no pin table found in the datasheet",
                  datasheet=(rec.result or {}).get("datasheet"))
 
     def _route_voice(text: str) -> None:
@@ -347,6 +375,26 @@ def create_app(store: Optional[StateStore] = None,
                     # U3: UI reports operator decision time on the candidate screen
                     store.set_user_decision(msg.get("request_id", ""),
                                             float(msg.get("ms", 0.0)))
+                elif cmd == "select_candidate":        # operator picked a candidate
+                    rid = msg.get("request_id", "")
+                    ms = msg.get("ms")
+                    rec = store.select_candidate(rid, str(msg.get("part_number", "")),
+                                                 float(ms) if ms is not None else None)
+                    if rec is None:
+                        hub.emit("answer", request_id=rid, available=False,
+                                 reason="that candidate can't be selected for this capture")
+                    else:
+                        from .catalog_api import load as _load_catalog
+                        part = _load_catalog().by_number(rec.result["part_number"])
+                        if part is not None and part.auto and not part.reviewed:
+                            rec.result["verified"] = False   # web-cached, not human-reviewed
+                        log.info("candidate selected by operator",
+                                 extra={"request_id": rid, "status": "accepted"})
+                        hub.emit("result", request_id=rid, status="accepted",
+                                 result=rec.result, config_version=rec.config_version,
+                                 config_hash=rec.config_hash)
+                        if tracker.active:              # overlay on -> swap it to the chosen part
+                            threading.Thread(target=_set_pinout, args=(True,), daemon=True).start()
                 elif cmd == "ask":                     # text datasheet question
                     threading.Thread(target=_answer_question,
                                      args=(msg.get("request_id", ""), msg.get("question", "")),
@@ -402,12 +450,32 @@ def main() -> None:
         threading.Thread(target=_serve_https, daemon=True).start()
         log.info(f"HTTPS (phone) on {config.HTTPS_HOST}:{config.HTTPS_PORT} -> /mobile",
                  extra={"status": "listen"})
+        _print_phone_url()
     else:
         log.info("HTTPS disabled (no cert) — run `make cert` for phone capture",
                  extra={"status": "listen"})
+        print("\n  No phone certificate yet. Stop this (Ctrl-C), run `make cert`, then `make run` again.\n",
+              flush=True)
 
     log.info(f"serving on {config.HOST}:{config.PORT}", extra={"status": "listen"})
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning", ws="wsproto")
+
+
+def _print_phone_url() -> None:
+    """Print the phone link on startup, and warn if the cert was made for another IP."""
+    import subprocess
+    from tools.make_cert import lan_ip
+    ip = lan_ip()
+    try:
+        san = subprocess.run(["openssl", "x509", "-in", str(config.CERT_FILE), "-noout", "-text"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        san = ""
+    print(f"\n  Phone link:  https://{ip}:{config.HTTPS_PORT}/mobile", flush=True)
+    if san and f"IP Address:{ip}" not in san:
+        print(f"  WARNING: the certificate was made for a different IP (laptop is now {ip}).\n"
+              f"  Stop this (Ctrl-C), run `make cert`, then `make run` again.", flush=True)
+    print(flush=True)
 
 
 if __name__ == "__main__":

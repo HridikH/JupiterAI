@@ -7,6 +7,8 @@ drive an accepted part so the pinout overlay has data.
 
     python -m tools.stream_sim --token dev --image eval/datasets/samples/ne555p.jpg
     python -m tools.stream_sim --token dev --dir eval/datasets/frames --fps 12
+    # a DIP chip that slowly rotates/drifts (exercises the AR pinout tracker)
+    python -m tools.stream_sim --token dev --chip LM358P --pins 8
 """
 from __future__ import annotations
 
@@ -46,9 +48,27 @@ def main() -> int:
     ap.add_argument("--dir", help="folder of JPEG frames to loop")
     ap.add_argument("--fps", type=int, default=12)
     ap.add_argument("--seconds", type=float, default=0, help="0 = run until Ctrl-C")
+    ap.add_argument("--chip", help="render a moving DIP chip with this marking")
+    ap.add_argument("--line2", default="TI 7M4")
+    ap.add_argument("--pins", type=int, default=8)
     args = ap.parse_args()
 
-    if args.dir:
+    if args.chip:
+        import math
+        from tools.make_sample_part import render_chip_scene
+
+        def chip_frame(i: int) -> bytes:
+            t = i / max(1, args.fps)
+            im = render_chip_scene(args.chip, args.line2, args.pins,
+                                   angle=25 * math.sin(t * 0.6),
+                                   offset=(120 * math.sin(t * 0.4), 60 * math.cos(t * 0.5)))
+            out = io.BytesIO()
+            im.save(out, format="JPEG", quality=80)
+            return out.getvalue()
+
+    if args.chip:
+        frames = []
+    elif args.dir:
         files = sorted(Path(args.dir).glob("*.jpg"))
         frames = [f.read_bytes() for f in files]
         if not frames:
@@ -56,17 +76,20 @@ def main() -> int:
     elif args.image:
         frames = [Path(args.image).read_bytes()]
     else:
-        print("give --image or --dir"); return 2
+        print("give --image, --dir or --chip"); return 2
 
     url = args.url.rstrip("/") + "/frame"
     headers = {protocol.HDR_TOKEN: args.token, "Content-Type": "image/jpeg"}
     period = 1.0 / max(1, args.fps)
     t_end = time.monotonic() + args.seconds if args.seconds else None
-    print(f"[stream-sim] -> {url} @ {args.fps} fps ({'loop '+str(len(frames)) if args.dir else 'animated'}) Ctrl-C to stop")
+    print(f"[stream-sim] -> {url} @ {args.fps} fps ({'chip '+args.chip if args.chip else 'loop '+str(len(frames)) if args.dir else 'animated'}) Ctrl-C to stop")
     i = 0
     try:
         while True:
-            data = frames[i % len(frames)] if args.dir else _animated(frames[0], i)
+            if args.chip:
+                data = chip_frame(i)
+            else:
+                data = frames[i % len(frames)] if args.dir else _animated(frames[0], i)
             try:
                 requests.post(url, headers=headers, data=data, timeout=2)
             except requests.RequestException as e:

@@ -92,6 +92,53 @@ def test_blur_takes_precedence():
     assert d.status == "recapture" and d.result["reason"] == "blur"
 
 
+def test_clear_part_read_beats_low_blur_metric():
+    # Sharp phone photo of a small chip on a plain table: blur_var is low (flat
+    # background), but OCR read an uncatalogued part number cleanly -> it must be
+    # not_in_catalog (which triggers the web lookup), not an endless "blur".
+    q = ImageQuality(blur_var=9.0, glare_frac=0.0, width=1000, height=800)
+    d = resolver.resolve(catalog(), ocr([("SN74HC153N", 0.95)]), TH, q, CROP)
+    assert d.status == "recapture" and d.result["reason"] == "not_in_catalog"
+    assert d.result["search_hint"] == "SN74HC153N"
+
+
+def _near_miss_catalog():
+    return Catalog.from_dicts([
+        {"part_number": "SN74HC04N", "manufacturer": "TI", "package": "PDIP-14",
+         "top_markings": ["SN74HC04N"]},
+        {"part_number": "LM358P", "manufacturer": "TI", "package": "PDIP-8",
+         "top_markings": ["LM358P", "LM358"]},
+    ])
+
+
+def _all_variants(text, conf=0.99):
+    # a real capture runs OCR over 5 enhancement variants; a clean read agrees
+    return [r for v in ("original", "contrast", "sharpen") for r in ocr([(text, conf)], v)]
+
+
+@pytest.mark.parametrize("read", ["SN74HC27N", "SN74HC08N", "LM359P"])
+def test_clean_read_of_different_part_is_not_offered_as_lookalike(read):
+    # A confident, consistent read of a part number the catalog doesn't have must
+    # not be accepted/offered as a near-identical catalog part (27N != 04N): it is
+    # not_in_catalog, which drives the web datasheet lookup.
+    d = resolver.resolve(_near_miss_catalog(), _all_variants(read), TH, GOOD_Q, CROP)
+    assert d.status == "recapture" and d.result["reason"] == "not_in_catalog"
+    assert d.result["search_hint"] == read
+
+
+@pytest.mark.parametrize("read", ["SN74HCO4N", "N74HC04N", "SN74HC04", "LM358P"])
+def test_ocr_confusions_and_dropped_ends_still_match(read):
+    # O-for-0 and a dropped first/last glyph are OCR errors, not a different part.
+    d = resolver.resolve(_near_miss_catalog(), _all_variants(read), TH, GOOD_Q, CROP)
+    assert d.status == "accepted"
+
+
+def test_unsure_near_miss_still_offers_candidates():
+    # low OCR confidence -> not a "clean" read -> the candidate screen as before
+    d = resolver.resolve(_near_miss_catalog(), _all_variants("SN74HC08N", 0.5), TH, GOOD_Q, CROP)
+    assert d.status == "candidate_selection"
+
+
 def test_glare_reason():
     q = ImageQuality(blur_var=500.0, glare_frac=0.9, width=1000, height=800)
     d = resolver.resolve(catalog(), ocr([("QWXYZ", 0.3)]), TH, q, CROP)

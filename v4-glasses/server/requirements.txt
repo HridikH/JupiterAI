@@ -9,6 +9,7 @@ wsproto==1.2.0            # forced WS backend — matches parent repo's fix
 python-multipart==0.0.20  # multipart/form-data parsing for /capture
 pillow==11.1.0           # JPEG decode/verify (V1 step 8) + dims
 numpy==2.2.1             # preprocessing variants + quality metrics
+scipy>=1.13              # chip tracker: body mask morphology (AR pinout overlay)
 requests==2.32.3         # fake-device + fuzzer client
 beautifulsoup4==4.12.3   # DuckDuckGo HTML parsing for web datasheet lookup
 pyyaml==6.0.2            # catalog loading (stage 3)

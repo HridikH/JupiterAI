@@ -35,6 +35,23 @@ parts:
     top_markings: ["CD4011BE", "CD4011B"]
     aliases: ["quad NAND"]
     min_char_height_mm: 0.8
+    # Scanned Harris datasheet (no text layer) -> reviewed from "TERMINAL
+    # ASSIGNMENTS", p.1. J = NOT(A·B), K = NOT(C·D), L = NOT(E·F), M = NOT(G·H).
+    pins:
+      - {pin: 1,  name: A,   desc: "Gate 1 input"}
+      - {pin: 2,  name: B,   desc: "Gate 1 input"}
+      - {pin: 3,  name: J,   desc: "Gate 1 output"}
+      - {pin: 4,  name: K,   desc: "Gate 2 output"}
+      - {pin: 5,  name: C,   desc: "Gate 2 input"}
+      - {pin: 6,  name: D,   desc: "Gate 2 input"}
+      - {pin: 7,  name: VSS, desc: "Ground"}
+      - {pin: 8,  name: E,   desc: "Gate 3 input"}
+      - {pin: 9,  name: F,   desc: "Gate 3 input"}
+      - {pin: 10, name: L,   desc: "Gate 3 output"}
+      - {pin: 11, name: M,   desc: "Gate 4 output"}
+      - {pin: 12, name: G,   desc: "Gate 4 input"}
+      - {pin: 13, name: H,   desc: "Gate 4 input"}
+      - {pin: 14, name: VDD, desc: "Positive supply (3-18 V)"}
 
   # ---- common jellybean parts ----
   - part_number: LM741CN
@@ -81,6 +98,58 @@ parts:
 
   - part_number: SN74HC04N
     manufacturer: Unknown
-    package: unknown
+    package: PDIP-14
     top_markings: ["SN74HC04N"]
     auto: true
+
+  - part_number: SN74HC153N
+    manufacturer: Texas Instruments
+    package: PDIP-16
+    top_markings: ["SN74HC153N", "74HC153", "HC153"]
+    aliases: ["dual 4-to-1 multiplexer"]
+    min_char_height_mm: 0.8
+    # TI sheet SCLS112E has no pin-function table and its DIP pin diagram is an
+    # embedded image (no text layer) -> reviewed from the 16-pin diagram, p.3.
+    # 1G/2G are active-low strobes (overbar in the datasheet); A/B select C0..C3.
+    pins:
+      - {pin: 1,  name: 1G,  desc: "Strobe 1 (active low)"}
+      - {pin: 2,  name: B,   desc: "Select input B"}
+      - {pin: 3,  name: 1C3, desc: "Mux 1 data input 3"}
+      - {pin: 4,  name: 1C2, desc: "Mux 1 data input 2"}
+      - {pin: 5,  name: 1C1, desc: "Mux 1 data input 1"}
+      - {pin: 6,  name: 1C0, desc: "Mux 1 data input 0"}
+      - {pin: 7,  name: 1Y,  desc: "Mux 1 output"}
+      - {pin: 8,  name: GND, desc: "Ground"}
+      - {pin: 9,  name: 2Y,  desc: "Mux 2 output"}
+      - {pin: 10, name: 2C0, desc: "Mux 2 data input 0"}
+      - {pin: 11, name: 2C1, desc: "Mux 2 data input 1"}
+      - {pin: 12, name: 2C2, desc: "Mux 2 data input 2"}
+      - {pin: 13, name: 2C3, desc: "Mux 2 data input 3"}
+      - {pin: 14, name: A,   desc: "Select input A"}
+      - {pin: 15, name: 2G,  desc: "Strobe 2 (active low)"}
+      - {pin: 16, name: VCC, desc: "Supply (2-6 V)"}
+
+  - part_number: SN74HC27N
+    manufacturer: Texas Instruments
+    package: PDIP-14
+    top_markings: ["SN74HC27N", "HC27"]
+    aliases: ["triple 3-input NOR"]
+    auto: true
+    # Auto-cached from the web (TI SCLS088D). No pin table and the DIP diagram's
+    # text layer is interleaved with the FK diagram -> pins reviewed from the
+    # 14-pin DIP diagram, p.1. Y = NOT(A + B + C).
+    pins:
+      - {pin: 1,  name: 1A,  desc: "Gate 1 input"}
+      - {pin: 2,  name: 1B,  desc: "Gate 1 input"}
+      - {pin: 3,  name: 2A,  desc: "Gate 2 input"}
+      - {pin: 4,  name: 2B,  desc: "Gate 2 input"}
+      - {pin: 5,  name: 2C,  desc: "Gate 2 input"}
+      - {pin: 6,  name: 2Y,  desc: "Gate 2 output"}
+      - {pin: 7,  name: GND, desc: "Ground"}
+      - {pin: 8,  name: 3Y,  desc: "Gate 3 output"}
+      - {pin: 9,  name: 3A,  desc: "Gate 3 input"}
+      - {pin: 10, name: 3B,  desc: "Gate 3 input"}
+      - {pin: 11, name: 3C,  desc: "Gate 3 input"}
+      - {pin: 12, name: 1Y,  desc: "Gate 1 output"}
+      - {pin: 13, name: 1C,  desc: "Gate 1 input"}
+      - {pin: 14, name: VCC, desc: "Supply (2-6 V)"}

@@ -46,3 +46,42 @@ def mjpeg_generator(fb: FrameBuffer):
 
 
 MJPEG_MEDIA_TYPE = "multipart/x-mixed-replace; boundary=frame"
+
+
+def pull_mjpeg(url: str, fb: FrameBuffer, stop: "threading.Event",
+               timeout: float = 5.0, retry_s: float = 2.0) -> None:
+    """Pull a device's multipart MJPEG stream into ``fb`` until ``stop`` is set.
+
+    Splits on JPEG SOI/EOI markers rather than trusting part headers, so it works
+    with esp32-camera's stream handler and any standard MJPEG server. Reconnects
+    forever (the glasses drop off Wi-Fi when they sleep)."""
+    import logging
+    import requests
+
+    log = logging.getLogger("glasses.stream")
+    while not stop.is_set():
+        try:
+            with requests.get(url, stream=True, timeout=timeout) as r:
+                r.raise_for_status()
+                log.info(f"pulling device stream {url}")
+                buf = b""
+                for chunk in r.iter_content(chunk_size=16384):
+                    if stop.is_set():
+                        return
+                    buf += chunk
+                    while True:
+                        a = buf.find(b"\xff\xd8")
+                        if a < 0:
+                            buf = buf[-1:]
+                            break
+                        b = buf.find(b"\xff\xd9", a + 2)
+                        if b < 0:
+                            buf = buf[a:]
+                            if len(buf) > 8 * 1024 * 1024:   # runaway frame -> resync
+                                buf = b""
+                            break
+                        fb.put(buf[a:b + 2])
+                        buf = buf[b + 2:]
+        except Exception as e:
+            log.info(f"device stream unavailable ({e}); retrying in {retry_s}s")
+        stop.wait(retry_s)

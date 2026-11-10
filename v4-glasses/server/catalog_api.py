@@ -33,6 +33,9 @@ class Part:
     # until a human verifies it (preserves "never present uncertain as definite").
     auto: bool = False
     reviewed: bool = True
+    # Hand-reviewed pin map [{no, name, desc}] for datasheets whose pin table isn't
+    # machine-readable (scanned sheets). Takes priority over datasheet parsing.
+    pins: list[dict[str, Any]] = field(default_factory=list)
 
     def candidate_strings(self) -> list[str]:
         """All strings an OCR read could legitimately match for this part.
@@ -65,6 +68,7 @@ class Catalog:
                 min_char_height_mm=r.get("min_char_height_mm"),
                 datasheet=dict(r.get("datasheet", {})),
                 auto=bool(r.get("auto", False)),
+                pins=list(r.get("pins", []) or []),
             )
             for r in rows
         ]

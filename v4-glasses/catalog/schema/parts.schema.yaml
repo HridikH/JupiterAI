@@ -29,3 +29,13 @@ properties:
     exclusiveMinimum: 0
   auto:
     type: boolean   # true = auto-cached from a web datasheet lookup (unreviewed)
+  pins:             # hand-reviewed pin map (used when the datasheet table isn't parseable)
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [pin, name]
+      properties:
+        pin: {type: integer, minimum: 1}   # NOT `no:` — YAML 1.1 parses that key as False
+        name: {type: string, minLength: 1}
+        desc: {type: string}

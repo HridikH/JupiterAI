@@ -82,8 +82,9 @@ async function startCamera(){
   }
 }
 
-function frameBlob(quality=0.9){
-  const v=$("v"); const w=v.videoWidth||1280, h=v.videoHeight||960;
+function frameBlob(quality=0.9, maxSide=0){
+  const v=$("v"); let w=v.videoWidth||1280, h=v.videoHeight||960;
+  if(maxSide && Math.max(w,h)>maxSide){ const k=maxSide/Math.max(w,h); w=Math.round(w*k); h=Math.round(h*k); }
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   c.getContext("2d").drawImage(v,0,0,w,h);
   return new Promise(res=>c.toBlob(b=>res({blob:b,w,h}),"image/jpeg",quality));
@@ -149,11 +150,16 @@ $("live").onclick = () => {
   if(liveTimer){ clearInterval(liveTimer); liveTimer=null; $("live").classList.remove("on"); $("live").textContent="● Live"; return; }
   if(!token()){ setStatus("error","Set the token",""); return; }
   $("live").classList.add("on"); $("live").textContent="● Live (on)";
+  // ~10 fps at 1280px: enough resolution for the laptop to read the chip marking
+  // (AR pinout tracking) while staying light on Wi-Fi. Skip a tick if the last
+  // upload is still in flight so frames never queue up (= no growing lag).
+  let inflight=false;
   liveTimer = setInterval(async ()=>{
-    try{ const {blob}=await frameBlob(0.6);
+    if(inflight) return; inflight=true;
+    try{ const {blob}=await frameBlob(0.75, 1280);
       await fetch(api+"/frame",{method:"POST",headers:{"X-Glasses-Token":token()},body:blob});
-    }catch{}
-  }, 450);
+    }catch{} finally{ inflight=false; }
+  }, 100);
 };
 
 startCamera();

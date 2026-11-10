@@ -110,7 +110,7 @@ _PIN_Q_RE = re.compile(r"\b(pin|pins|pinout|pin-?out|connect|wire|hook\s*up|term
 _PIN_NAMES = {"GND", "VCC", "VDD", "OUT", "TRIG", "RESET", "THRES", "DISCH", "CONT", "NC", "CV"}
 # ordered signal -> question keywords (first match wins)
 _SIGNAL_ALIASES = [
-    ("GND", ["ground", "gnd", "vss", "0v", "negative"]),
+    ("GND", ["ground", "gnd", "vss", "0v", "negative supply", "v-"]),
     ("VCC", ["vcc", "vdd", "supply", "power", "v+", "positive"]),
     ("TRIG", ["trigger", "trig"]),
     ("RESET", ["reset"]),
@@ -119,6 +119,12 @@ _SIGNAL_ALIASES = [
     ("CONT", ["control voltage", "control", "cont", "cv"]),
     ("OUT", ["output", "out"]),
 ]
+# datasheet pin names that carry each signal (first present wins)
+_SIGNAL_NAMES = {
+    "GND": ["GND", "VSS", "V-", "VCC-", "VEE"],
+    "VCC": ["VCC", "VDD", "V+", "VCC+", "INPUT"],
+    "OUT": ["OUT", "OUTPUT", "1OUT", "OUT1"],
+}
 
 
 # Pin-name shapes across op-amps, logic, timers, comparators, regulators.
@@ -245,7 +251,16 @@ def parse_pin_table(text: str, package: str = "") -> dict[str, dict]:
 
 
 def get_pins(part_number: str) -> dict:
-    """Structured pin map for the live-feed overlay: {part, page, pins:[{name,no,desc}]}."""
+    """Structured pin map for the live-feed overlay + pin Q&A.
+
+    {part, package, layout, pin_count, page, source, pins:[{name,no,desc}]} — see
+    server/pinout.py for the source order (catalog > table > diagram > text)."""
+    from server import pinout
+    return pinout.get_pins(part_number, legacy=_legacy_get_pins)
+
+
+def _legacy_get_pins(part_number: str) -> dict:
+    """Line-based fallback over the captured 'Pin Functions' section text."""
     idx = _index(part_number)
     if idx is None:
         return {"part": part_number, "page": None, "pins": []}
@@ -307,9 +322,12 @@ def _pin_answer(idx, part_number: str, question: str) -> dict | None:
     by_name = {p["name"]: p for p in pins}
     ql = question.lower()
     for sig, keys in _SIGNAL_ALIASES:
-        if sig in by_name and any(k in ql for k in keys):
-            p = by_name[sig]
-            ans = f"{sig} ({p['desc']}) is pin {p['no']}." if p.get("desc") else f"{sig} is pin {p['no']}."
+        if not any(k in ql for k in keys):
+            continue
+        name = next((n for n in _SIGNAL_NAMES.get(sig, [sig]) if n in by_name), None)
+        if name:
+            p = by_name[name]
+            ans = f"{name} ({p['desc']}) is pin {p['no']}." if p.get("desc") else f"{name} is pin {p['no']}."
             return {"available": True, "answer": ans, "source": "pin_table",
                     "citation": {"part_number": part_number, "page": page, "section": "pin_functions"}}
     listing = ", ".join(f"{p['name']} = pin {p['no']}" for p in pins)

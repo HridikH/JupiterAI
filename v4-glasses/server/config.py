@@ -72,6 +72,11 @@ VOICE_ALWAYS = os.getenv("GLASSES_VOICE_ALWAYS", "0") == "1"
 
 # ---- Live camera feed (MJPEG) -----------------------------------------------
 STREAM_FPS = int(os.getenv("GLASSES_STREAM_FPS", "12"))
+# The glasses firmware serves its own MJPEG feed (firmware/main/stream.c, :81/stream).
+# Set this to that URL (e.g. http://192.168.4.20:81/stream) and the server pulls it
+# into the laptop's live feed + chip tracker. Unset = frames arrive via POST /frame
+# (phone /mobile "Live", tools/stream_sim).
+DEVICE_STREAM_URL = os.getenv("GLASSES_DEVICE_STREAM_URL", "")
 
 # ---- Web datasheet lookup (parts NOT in the local catalog) ------------------
 # The offline guarantee covers CACHED catalog parts. For a part the OCR reads

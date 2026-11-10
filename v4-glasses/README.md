@@ -32,6 +32,34 @@ tests/     receiver, resolver, manifest, state machine, eval, e2e simulator
 
 ---
 
+## Project status (2026-11-10)
+
+**Hardware**
+- The PCB is assembled and **powered up**.
+- A few components burned out during bring-up. Replacements have been ordered.
+- We are now in the **final integration stage**: PCB, ESP32-S3 and OV5640 camera, then upload to the laptop pipeline.
+- **Expected completion: this weekend (Nov 14–15, 2026).**
+
+**Software (laptop side): feature-complete for the demo, 157 tests passing**
+- **Recognition pipeline:** preprocess, Apple Vision OCR, then a deterministic, confusion-aware catalog resolver with accept, candidate and recapture outcomes.
+- **Live camera feed:** the AR pinout is overlaid on the chip, with pin 1 orientation and DIP layout.
+- **Phone camera:** works as a stand-in for the glasses. The HTTPS link is printed at startup.
+- **Web datasheet fallback:** parts that aren't in the catalog are looked up and cached automatically.
+- **Voice Q&A:** hands-free questions are answered from the accepted part's datasheet.
+- **Choosing a candidate:** when the operator picks a part on the candidate screen, that part is accepted and the live pinout switches to it.
+
+**Recent fixes**
+- **No more endless "blurry":** a sharp photo of a chip on a plain background was flagged as blurry on every recapture. A clean part-number read now takes priority over the blur metric.
+- **No more look-alike matches:** a clear read of a part that isn't in the catalog (e.g. 74HC27N vs 74HC04N) is no longer accepted as a similar catalog part. It goes to the web lookup instead. OCR slips like O/0 or a dropped first letter still match.
+- **New catalog parts:** SN74HC153N and SN74HC27N, with pin maps entered by hand and reviewed. Their TI datasheets have no text pin table.
+
+**Open items**
+- **Firmware:** GPIO pins in `firmware/main/board_config.h` still need to be filled in from the final schematic.
+- **Thresholds:** not yet calibrated and frozen (`eval/` → `server/thresholds.json`).
+- **Web-found parts:** if a datasheet has no text pin table, its pin map has to be entered by hand.
+
+---
+
 ## Quick start (laptop side)
 
 ```bash
@@ -66,8 +94,37 @@ python -m tools.fake_device  --token dev --image eval/datasets/samples/ne555p.jp
 python -m tools.stream_sim   --token dev --image eval/datasets/samples/ne555p.jpg   # live feed
 ```
 
-A **pinout overlay** (DIP-style pin map from the datasheet's Pin Functions table, e.g.
-GND→1, VCC→8) draws over the feed. Toggle it:
+A **live AR pinout overlay** labels every pin *on the chip itself* in the feed and
+follows it as it moves or rotates. Each live frame, the server finds the accepted
+part's top marking (Apple Vision, rotated text boxes), grows the dark package body
+outward from it, and lays the pins along the body edges. Pin 1 comes from the
+marking's reading direction: with the text upright, pin 1 is bottom-left, so no
+notch detection is needed and it still works when the chip is upside-down. Power pins
+are red, ground blue, NC grey; a `*` marks a pin number that was inferred rather
+than read (see below). If the marking leaves the view, the overlay falls back to
+the static pin diagram. Tracking runs about 10 Hz on an M-series Mac and only while
+the overlay is on.
+
+Pin maps come from (first that works): a reviewed `pins:` list in
+`catalog/parts.yaml` (for scanned datasheets like CD4011B) → the datasheet's
+*Pin Functions* table (PyMuPDF table extraction; picks the right package column
+and the right device's table in family sheets like TL07x) → the *TOP VIEW*
+pin-diagram text → the legacy text parser. See `server/pinout.py`.
+
+```bash
+# hardware-free AR demo: a synthetic chip that drifts and rotates
+python -m tools.make_sample_part --marking LM358P --line2 "TI 7M4" --scene --pins 8
+python -m tools.fake_device --token dev --image eval/datasets/samples/lm358p_scene.jpg   # accept
+python -m tools.stream_sim  --token dev --chip LM358P --pins 8                          # live feed
+```
+
+**Where the live frames come from:**
+- **Glasses:** set `GLASSES_DEVICE_STREAM_URL=http://<glasses-ip>:81/stream` and the
+  server pulls the firmware's MJPEG feed into the laptop (reconnects on its own).
+- **Phone:** `/mobile` → **● Live** (about 10 fps at 1280 px, no frame backlog).
+- **Simulator:** `tools.stream_sim` (above), or anything that POSTs JPEGs to `/frame`.
+
+Toggle the overlay:
 
 - **Voice:** say *"show pinout"* / *"hide pinout"* (always-listening).
 - **Button:** the ▢ Pinout pill, or the UI **Voice** pill to start/stop listening.
@@ -121,6 +178,7 @@ Set these in the environment (or a local, gitignored `.env`):
 | `GLASSES_DATASHEET_QA` | optional grounded Qwen Q&A | `0` |
 | `GLASSES_HTTPS_PORT` | phone HTTPS listener (needs `make cert`) | `8443` |
 | `GLASSES_HTTPS_HOST` | HTTPS bind (LAN so the phone can reach it) | `0.0.0.0` |
+| `GLASSES_DEVICE_STREAM_URL` | glasses MJPEG feed to pull (e.g. `http://192.168.4.20:81/stream`) | unset |
 
 ---
 

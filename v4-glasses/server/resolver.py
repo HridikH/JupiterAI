@@ -197,7 +197,14 @@ def _offcenter_frac(ocr_results: Iterable[OCRResult], crop_size: tuple[int, int]
 def pick_recapture_reason(quality: ImageQuality, ocr_results: list[OCRResult],
                           crop_size: tuple[int, int], th: Thresholds) -> str:
     q = th.quality
-    # image-level signals first (they also explain a bad OCR read)
+    # A clear, part-number-like read wins over every image-quality nag: if OCR got
+    # the marking, the image was sharp enough, and "not_in_catalog" drives the
+    # automatic web lookup. (The global blur metric false-positives on sharp photos
+    # of a small dark chip on a plain background — most of the crop is textureless,
+    # so blur_var stays low however many times you recapture.)
+    if _best_part_token(ocr_results):
+        return "not_in_catalog"
+    # image-level signals (they explain a bad OCR read)
     if quality.blur_var < q.get("blur_var_min", 60.0):
         return "blur"
     if quality.glare_frac > q.get("glare_frac_max", 0.12):
@@ -205,10 +212,6 @@ def pick_recapture_reason(quality: ImageQuality, ocr_results: list[OCRResult],
     any_words = any(res.words for res in ocr_results)
     if not any_words:
         return "unreadable"
-    # If a clear, part-number-like marking was read, prefer "not_in_catalog" (which
-    # drives the automatic web lookup) over framing nags — we have enough to search.
-    if _best_part_token(ocr_results):
-        return "not_in_catalog"
     char_px = _est_char_px(ocr_results)
     if char_px is not None and char_px < q.get("min_char_px", 14.0):
         return "too_far"
@@ -218,9 +221,78 @@ def pick_recapture_reason(quality: ImageQuality, ocr_results: list[OCRResult],
     return "unreadable"
 
 
+def _hard_edits(cand: str, obs: str) -> int:
+    """Minimum NON-confusable edits to find `cand` inside `obs` (semi-global
+    alignment: free prefix/suffix of obs; confusable substitutions are free).
+    0 means obs contains cand up to OCR glyph confusion (NE5S5 ~ NE555)."""
+    a, b = confusion.normalize(cand), confusion.normalize(obs)
+    if not a:
+        return 0
+    prev = [0] * (len(b) + 1)                      # free start anywhere in obs
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            sub = 0 if confusion.sub_cost(a[i - 1], b[j - 1]) < 1.0 else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + sub)
+        prev = cur
+    return min(prev)                               # free end anywhere in obs
+
+
+# A token counts as a confident, clean read when OCR is this sure of it and at
+# least this many enhancement variants read it identically.
+CLEAN_CONF = 0.9
+CLEAN_MIN_VARIANTS = 2
+
+
+def _clean_tokens(ocr_results: list[OCRResult]) -> list[str]:
+    """Part-number-like tokens read confidently and consistently across variants."""
+    seen: dict[str, set[str]] = {}
+    for res in ocr_results:
+        for w in res.words:
+            for raw in w.text.split():
+                t = confusion.normalize(raw)
+                if (len(t) >= 5 and w.confidence >= CLEAN_CONF
+                        and any(c.isdigit() for c in t) and any(c.isalpha() for c in t)):
+                    seen.setdefault(t, set()).add(res.variant)
+    return [t for t, v in seen.items() if len(v) >= CLEAN_MIN_VARIANTS]
+
+
+def _different_part(top: Candidate, ocr_results: list[OCRResult]) -> bool:
+    """True when OCR cleanly read a part number that the top catalog match does
+    NOT explain. Example: 'SN74HC27N' read perfectly must not be offered or
+    accepted as SN74HC04N just because the strings are 78% similar — 0->2 and
+    4->7 are different parts, not OCR confusions."""
+    clean = _clean_tokens(ocr_results)
+    if not clean:
+        return False
+    strings = [s for s in top.part.candidate_strings()
+               if len(confusion.normalize(s)) >= MIN_MATCH_LEN]
+    # OCR often drops the first/last glyph (N74HC04N for SN74HC04N): a missing
+    # end character is not evidence of a different part, a changed middle one is.
+    # (Only trim when what's left stays specific: "LM358" -> "LM35" would also
+    # "explain" LM359P.)
+    trimmed = set(strings) | {v for s in strings for v in (s[1:], s[:-1], s[1:-1])
+                              if len(confusion.normalize(v)) >= 6}
+    obs = [o for o, _ in _collect_observed(ocr_results)]
+    if any(_hard_edits(s, o) == 0 for s in trimmed for o in obs):
+        return False                               # some read explains this part
+    # a clean token that this part can't explain -> the chip is something else
+    return any(min(_hard_edits(s, t) for s in trimmed) > 0 for t in clean)
+
+
 def resolve(catalog: Catalog, ocr_results: list[OCRResult], th: Thresholds,
             quality: ImageQuality, crop_size: tuple[int, int]) -> Decision:
     ranked = rank(catalog, ocr_results)
+    if ranked and ranked[0].score >= th.candidate_score and _different_part(ranked[0], ocr_results):
+        # Never accept or offer a look-alike for a cleanly read, different part
+        # number: route to not_in_catalog so the web datasheet lookup runs.
+        best_text = max((r.text for r in ocr_results), key=len, default="").strip()
+        toks = part_tokens(ocr_results)
+        return Decision("recapture", {
+            "reason": "not_in_catalog", "message": RECAPTURE_MESSAGES["not_in_catalog"],
+            "ocr_text": best_text, "search_hint": toks[0] if toks else "",
+            "search_tokens": toks, "near_miss": ranked[0].part.part_number,
+        }, ranked, ranked[0].score, 0.0)
     top = ranked[0] if ranked else None
     second = ranked[1] if len(ranked) > 1 else None
     top_score = top.score if top else 0.0

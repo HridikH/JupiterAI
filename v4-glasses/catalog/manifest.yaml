@@ -99,3 +99,22 @@ entries:
   reviewed: false
   cite_page: 1
   auto: true
+- orderable_number: SN74HC153N
+  manufacturer: Texas Instruments
+  package: PDIP-16
+  url: https://www.ti.com/lit/ds/symlink/sn74hc153.pdf
+  retrieval_date: '2026-11-06'
+  sha256: 597f9aa76565c7179a7d265e7d12121e1910613dc1dd04cae1d24958c1795caa
+  cache_path: catalog/cache/sn74hc153.pdf
+  reviewed: false
+  cite_page: 3
+- orderable_number: SN74HC27N
+  manufacturer: Texas Instruments
+  package: PDIP-14
+  url: https://datasheets.b-cdn.net/files/SN74HC27N-Texas-Instruments-datasheet-87118.pdf
+  retrieval_date: '2026-01-01'
+  sha256: 3748c3cd00975f1898dff207890acc63b9fdf7d32049b0ba3f21d6567a7164d0
+  cache_path: catalog/cache/sn74hc27n.pdf
+  reviewed: false
+  cite_page: 1
+  auto: true

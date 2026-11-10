@@ -53,6 +53,7 @@ class StateStore:
     def __init__(self) -> None:
         self._records: dict[str, RequestRecord] = {}
         self._lock = threading.Lock()
+        self._last_accepted: Optional[str] = None   # request_id, by time of acceptance
 
     def start(self, request_id: str, meta: dict[str, Any]) -> tuple[RequestRecord, bool]:
         """Create a record for request_id, or return the existing one.
@@ -84,6 +85,44 @@ class StateStore:
             if config_hash is not None:
                 rec.config_hash = config_hash
             rec.stamp(status)
+            if status == "accepted":
+                self._last_accepted = request_id
+            return rec
+
+    def select_candidate(self, request_id: str, part_number: str,
+                         ms: Optional[float] = None) -> Optional[RequestRecord]:
+        """Operator picked one of THIS request's candidates on the candidate screen.
+
+        Only a part that the resolver itself offered for this request can be chosen
+        (nothing is invented); the record becomes 'accepted', tagged as an operator
+        decision, and is now the subject of pinout/Q&A. Returns None if refused."""
+        with self._lock:
+            rec = self._records.get(request_id)
+            if rec is None or rec.status != "candidate_selection":
+                return None
+            res = rec.result or {}
+            cands = res.get("candidates") or []
+            pick = next((c for c in cands if c.get("part_number") == part_number), None)
+            if pick is None:
+                return None
+            rec.result = {
+                "part_number": pick["part_number"],
+                "manufacturer": pick.get("manufacturer"),
+                "package": pick.get("package"),
+                "score": pick.get("score"),
+                "margin": res.get("margin"),
+                "ocr_text": res.get("ocr_text", ""),
+                "matched_string": "",
+                "datasheet": pick.get("datasheet"),
+                "source": "operator",
+                "verified": True,
+                "selected_by": "operator",
+                "candidates": cands,
+            }
+            if ms is not None:
+                rec.user_decision_ms = ms
+            rec.stamp("accepted")
+            self._last_accepted = request_id
             return rec
 
     def set_user_decision(self, request_id: str, ms: float) -> None:
@@ -97,8 +136,13 @@ class StateStore:
             return list(self._records)
 
     def latest_accepted(self) -> Optional[RequestRecord]:
-        """Most recently accepted record — the subject of voice/pinout commands."""
+        """Most recently accepted record — the subject of voice/pinout commands.
+        'Most recent' is by time of acceptance, so picking a candidate on an older
+        capture makes it the subject."""
         with self._lock:
+            last = self._records.get(self._last_accepted or "")
+            if last is not None and last.status == "accepted":
+                return last
             for rid in reversed(self._records):
                 rec = self._records[rid]
                 if rec.status == "accepted":
@@ -108,3 +152,4 @@ class StateStore:
     def clear(self) -> None:
         with self._lock:
             self._records.clear()
+            self._last_accepted = None
